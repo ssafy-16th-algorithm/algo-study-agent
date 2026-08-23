@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
+import { notionCodeSnapshots, notionSolutionUrls } from './data/notion-solutions';
 
 type Theme = 'light' | 'dark';
 type SubmissionStatus = 'done' | 'progress' | 'empty';
 type MemberId = 'jonghyuck' | 'yeajeong' | 'taekgi' | 'minkyung';
+type Review = { label:string; title:string; body:string; question:string; highlightLine?:number };
 
 type Problem = {
   id: string;
@@ -48,6 +50,16 @@ const problems: Problem[] = [
   { id:'brick', week:5, platform:'SWEA', title:'벽돌깨기', date:'08.14–08.21', url:'https://swexpertacademy.com/main/code/problem/problemDetail.do?contestProbId=AWXRQm6qfL0DFAUo', notionUrl:'https://app.notion.com/0daa717ec99e83f0adee01d75d7b99e7', tag:'완전탐색', statuses:{jonghyuck:'progress',yeajeong:'empty',taekgi:'done',minkyung:'empty'} },
   { id:'block', week:5, platform:'SWEA', title:'블록제거게임', date:'08.14–08.21', url:'https://swexpertacademy.com/main/code/userProblem/userProblemDetail.do?contestProbId=AZwmCVWq3uLHBIT3', notionUrl:'https://app.notion.com/64ea717ec99e8238a92d011d192a7494', tag:'백트래킹', statuses:{jonghyuck:'done',yeajeong:'empty',taekgi:'done',minkyung:'empty'} },
 ];
+
+// Notion에 실제 코드 블록이 있으면 예전 제출 현황의 '미제출' 표시를 보정합니다.
+for (const problem of problems) {
+  for (const memberId of Object.keys(problem.statuses) as MemberId[]) {
+    const notionCode = notionCodeSnapshots[`${problem.id}:${memberId}`];
+    if (notionCode && problem.statuses[memberId] === 'empty') {
+      problem.statuses[memberId] = /(미해결|미완성|todo)/i.test(notionCode) ? 'progress' : 'done';
+    }
+  }
+}
 
 const solutionUrls: Partial<Record<string,string>> = {
   'bridge:jonghyuck':'https://github.com/ssafy-16th-algorithm/jonghyuck/blob/main/src/week1/BOJ_17472.java',
@@ -140,7 +152,7 @@ for (int[] edge : costs) {
 }`,
 };
 
-const reviews: Partial<Record<string,{label:string;title:string;body:string;question:string}>> = {
+const reviews: Partial<Record<string,Review>> = {
   'bridge:jonghyuck':{label:'누락 단계',title:'탐색 좌표가 다음 칸으로 이동하지 않습니다.',body:'방향을 고정한 뒤 row와 col을 갱신해야 직선 다리를 끝까지 탐색할 수 있습니다. 현재 구조는 같은 칸의 네 방향을 반복합니다.',question:'다리 후보 생성과 MST 단계를 어떤 자료구조로 연결할까요?'},
   'bridge:yeajeong':{label:'구조',title:'Kruskal의 종료 조건까지 선명합니다.',body:'간선을 비용 순서로 확인하고 union 성공 시에만 합산합니다. 선택 간선 수로 모든 섬의 연결 여부도 함께 검증했습니다.',question:'가장자리 육지만 탐색하면 간선 생성 비용이 얼마나 줄어들까요?'},
   'prerequisite:taekgi':{label:'정확성',title:'선수과목 수와 학기 전파가 자연스럽게 이어집니다.',body:'진입 차수가 0인 과목을 1학기로 시작하고, 다음 과목은 선행 경로 중 가장 늦은 학기를 기준으로 갱신합니다.',question:'LinkedList 대신 ArrayDeque를 쓰면 어떤 차이가 있을까요?'},
@@ -162,9 +174,7 @@ const statusText: Record<SubmissionStatus,string> = { done:'풀이 완료', prog
 
 const reviewPersona = {
   name: '코딩테스트 멘토',
-  experience: '알고리즘 풀이 경력 10년+',
   specialty: '기업 코딩테스트 · 삼성 SW 역량테스트',
-  method: '정답 근거 → 놓친 조건 → 가장 쉬운 개선 순서',
   principles: '정답 가능성, 입력 제한, 복잡도, 반례를 근거로 평가하고 쉬운 접근을 최대 3단계로 설명한다.',
 };
 
@@ -225,9 +235,13 @@ function getSource(problem: Problem, memberId: MemberId) {
   return { label:solutionUrl ? '원본 코드' : member.sourceLabel, url:solutionUrl ?? member.sourceUrl };
 }
 
-function CodeViewer({code,matchers}:{code:string;matchers?:string[]}) {
+const reviewCache = new Map<string,Review>();
+
+function CodeViewer({code,matchers,highlightLine}:{code:string;matchers?:string[];highlightLine?:number}) {
   const lines = code.replace(/\r\n/g,'\n').split('\n');
-  const reviewedLine = matchers ? lines.findIndex((line) => matchers.some((matcher) => line.includes(matcher))) : -1;
+  const reviewedLine = highlightLine && highlightLine > 0
+    ? Math.min(highlightLine - 1, lines.length - 1)
+    : matchers ? lines.findIndex((line) => matchers.some((matcher) => line.includes(matcher))) : -1;
 
   return (
     <pre className="codeViewer" tabIndex={0} aria-label="전체 풀이 코드. 가로와 세로로 스크롤할 수 있습니다.">
@@ -244,6 +258,8 @@ export default function Home() {
   const [syncedCode,setSyncedCode] = useState<string|null>(null);
   const [syncedSourceUrl,setSyncedSourceUrl] = useState<string|null>(null);
   const [syncState,setSyncState] = useState<'loading'|'github'|'notion'|'unavailable'>('loading');
+  const [generatedReview,setGeneratedReview] = useState<Review|null>(null);
+  const [reviewState,setReviewState] = useState<'idle'|'loading'|'ready'>('idle');
 
   const visibleProblems = useMemo(() => problems.filter((problem) => problem.week === selectedWeek), [selectedWeek]);
   const selectedProblem = problems.find((problem) => problem.id === selectedProblemId) ?? visibleProblems[0];
@@ -251,10 +267,12 @@ export default function Home() {
   const selectedStatus = selectedProblem.statuses[selectedMemberId];
   const detailKey = `${selectedProblem.id}:${selectedMemberId}`;
   const source = getSource(selectedProblem, selectedMemberId);
-  const fallbackCode = codePreviews[detailKey] ?? null;
+  const fallbackCode = notionCodeSnapshots[detailKey] ?? codePreviews[detailKey] ?? null;
   const code = syncedCode;
-  const review = reviews[detailKey];
-  const sourceFileName = decodeURIComponent((syncedSourceUrl ?? source.url).split('/').pop() || 'solution.java');
+  const review = generatedReview ?? reviews[detailKey];
+  const sourceFileName = syncState === 'notion'
+    ? `${selectedProblem.platform}_${selectedProblem.title.replace(/\s+/g,'_')}.java`
+    : decodeURIComponent((syncedSourceUrl ?? source.url).split('/').pop() || 'solution.java');
   const completedCount = members.filter((member) => selectedProblem.statuses[member.id] === 'done').length;
 
   useEffect(() => {
@@ -287,10 +305,28 @@ export default function Home() {
           setSyncState('github');
         }
       } catch {
+        const notionUrl = notionSolutionUrls[detailKey];
+        let notionCode = fallbackCode;
+
+        if (notionUrl) {
+          try {
+            const pageId = notionUrl.match(/[0-9a-f]{32}/i)?.[0];
+            if (pageId) {
+              const response = await fetch(`/api/notion-code?pageId=${pageId}`, { cache:'no-store' });
+              if (response.ok) {
+                const data = await response.json() as { code?:string };
+                if (data.code?.trim()) notionCode = data.code;
+              }
+            }
+          } catch {
+            // 배포 환경에 Notion 토큰이 없으면 마지막 동기화 스냅샷을 사용합니다.
+          }
+        }
+
         if (!cancelled) {
-          setSyncedCode(fallbackCode);
-          setSyncedSourceUrl(selectedProblem.notionUrl);
-          setSyncState(fallbackCode ? 'notion' : 'unavailable');
+          setSyncedCode(notionCode);
+          setSyncedSourceUrl(notionUrl ?? selectedProblem.notionUrl);
+          setSyncState(notionCode ? 'notion' : 'unavailable');
         }
       }
     };
@@ -298,6 +334,56 @@ export default function Home() {
     void syncCode();
     return () => { cancelled = true; };
   }, [detailKey, fallbackCode, selectedMemberId, selectedProblem, selectedStatus]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const generateReview = async () => {
+      await Promise.resolve();
+      if (cancelled) return;
+      setGeneratedReview(null);
+
+      if (!code) {
+        setReviewState('idle');
+        return;
+      }
+
+      const cacheKey = `${detailKey}:${code.length}:${code.slice(-80)}`;
+      const cached = reviewCache.get(cacheKey);
+      if (cached) {
+        setGeneratedReview(cached);
+        setReviewState('ready');
+        return;
+      }
+
+      setReviewState('loading');
+      try {
+        const response = await fetch('/api/review', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            problem:{ title:selectedProblem.title, platform:selectedProblem.platform, tag:selectedProblem.tag },
+            member:selectedMember.name,
+            status:selectedStatus,
+            code,
+          }),
+        });
+        if (!response.ok) throw new Error('review unavailable');
+        const data = await response.json() as { review?:Review };
+        if (data.review && !cancelled) {
+          reviewCache.set(cacheKey,data.review);
+          setGeneratedReview(data.review);
+        }
+      } catch {
+        // API 키가 아직 연결되지 않은 환경에서는 검수된 기본 리뷰를 유지합니다.
+      } finally {
+        if (!cancelled) setReviewState('ready');
+      }
+    };
+
+    void generateReview();
+    return () => { cancelled = true; };
+  }, [code, detailKey, selectedMember.name, selectedProblem.platform, selectedProblem.tag, selectedProblem.title, selectedStatus]);
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark';
@@ -375,8 +461,8 @@ export default function Home() {
               <div className="emptyState"><span className="emptyIcon">＋</span><h3>아직 등록된 풀이가 없습니다.</h3><p>{selectedMember.name}님의 풀이가 Notion 또는 GitHub에 추가되면 이 자리에 코드와 리뷰가 표시됩니다.</p><a href={selectedProblem.notionUrl} target="_blank" rel="noreferrer">Notion 문제 페이지 ↗</a></div>
             ) : (
               <div className="solutionStack">
-                <article className="codeCard"><div className="cardBar"><div><span className={`statusDot ${selectedStatus}`}/><span className="fileIdentity"><strong>{sourceFileName}</strong><small>{selectedMember.name} · Java</small></span><span className={`syncState ${syncState}`}>{syncState==='loading'?'동기화 중':syncState==='github'?'GitHub 최신':syncState==='notion'?'Notion 기준':'코드 없음'}</span></div><a href={syncedSourceUrl ?? source.url} target="_blank" rel="noreferrer">{syncState==='notion'?'Notion 원문':source.label} ↗</a></div>{syncState==='loading' ? <div className="codePending"><span className="syncSpinner"/><strong>최신 코드를 불러오는 중</strong><p>공개 GitHub 저장소를 확인하고 있습니다.</p></div> : code ? <CodeViewer code={code} matchers={review ? reviewLineMatchers[detailKey] : undefined}/> : <div className="codePending"><span>⌁</span><strong>연결된 코드가 없습니다</strong><p>GitHub 파일을 찾지 못했고 저장된 Notion 코드도 없습니다.</p><a href={selectedProblem.notionUrl} target="_blank" rel="noreferrer">Notion 문제 페이지 ↗</a></div>}</article>
-                <aside className="reviewCard"><p className="srOnly">{reviewPersona.principles}</p><div className="reviewLabel"><span>AI</span><div><strong>{reviewPersona.name}</strong><small>{reviewPersona.specialty}</small></div></div><div className="personaMeta"><span>{reviewPersona.experience}</span><p>{reviewPersona.method}</p></div>{review ? <><span className="reviewTag">{review.label}</span><h3>{review.title}</h3><p>{review.body}</p><div className="reviewQuestion"><span>다음 질문</span><p>{review.question}</p></div></> : <><span className="reviewTag muted">분석 대기</span><h3>코드 미리보기 생성 후 리뷰합니다.</h3><p>정답 가능성, 입력 제한, 복잡도와 누락 조건을 순서대로 확인한 뒤 핵심 근거만 남깁니다.</p><div className="reviewQuestion"><span>현재 상태</span><p>{selectedStatus === 'progress' ? '작성 중인 풀이를 추적하고 있습니다.' : '다음 동기화 작업을 기다리고 있습니다.'}</p></div></>}</aside>
+                <article className="codeCard"><div className="cardBar"><div><span className={`statusDot ${selectedStatus}`}/><span className="fileIdentity"><strong>{sourceFileName}</strong><small>{selectedMember.name} · Java</small></span><span className={`syncState ${syncState}`}>{syncState==='loading'?'동기화 중':syncState==='github'?'GitHub 최신':syncState==='notion'?'Notion 기준':'코드 없음'}</span></div><a href={syncedSourceUrl ?? source.url} target="_blank" rel="noreferrer">{syncState==='notion'?'Notion 원문':source.label} ↗</a></div>{syncState==='loading' ? <div className="codePending"><span className="syncSpinner"/><strong>최신 코드를 불러오는 중</strong><p>공개 GitHub 저장소를 확인하고 있습니다.</p></div> : code ? <CodeViewer code={code} matchers={review ? reviewLineMatchers[detailKey] : undefined} highlightLine={review?.highlightLine}/> : <div className="codePending"><span>⌁</span><strong>연결된 코드가 없습니다</strong><p>GitHub 파일을 찾지 못했고 저장된 Notion 코드도 없습니다.</p><a href={selectedProblem.notionUrl} target="_blank" rel="noreferrer">Notion 문제 페이지 ↗</a></div>}</article>
+                <aside className="reviewCard"><p className="srOnly">{reviewPersona.principles}</p><div className="reviewLabel"><span>AI</span><div><strong>{reviewPersona.name}</strong><small>{reviewPersona.specialty}</small></div></div>{review ? <><span className="reviewTag">{review.label}</span><h3>{review.title}</h3><p>{review.body}</p><div className="reviewQuestion"><span>다음 질문</span><p>{review.question}</p></div></> : <><span className="reviewTag muted">{reviewState === 'loading' ? '분석 중' : '분석 대기'}</span><h3>{reviewState === 'loading' ? '현재 코드를 읽고 있습니다.' : '코드 동기화 후 리뷰합니다.'}</h3><p>정답 가능성, 입력 제한, 복잡도와 누락 조건을 순서대로 확인한 뒤 핵심 근거만 남깁니다.</p><div className="reviewQuestion"><span>현재 상태</span><p>{reviewState === 'loading' ? '코드와 문제 조건을 비교하고 있습니다.' : selectedStatus === 'progress' ? '작성 중인 풀이를 추적하고 있습니다.' : '다음 동기화 작업을 기다리고 있습니다.'}</p></div></>}</aside>
               </div>
             )}
           </section>
