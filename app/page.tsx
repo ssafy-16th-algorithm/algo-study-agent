@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 
 type Theme = 'light' | 'dark';
 type SubmissionStatus = 'done' | 'progress' | 'empty';
@@ -148,7 +149,75 @@ const reviews: Partial<Record<string,{label:string;title:string;body:string;ques
   'block:taekgi':{label:'구조',title:'선택 → 재귀 → 복구가 간결합니다.',body:'ArrayList에서 블록을 제거하고 같은 위치에 되돌려 모든 제거 순서를 빠짐없이 탐색합니다. 변경 가능한 상태를 다루는 백트래킹의 핵심이 잘 드러납니다.',question:'남은 블록 수가 1일 때의 점수 계산을 별도 함수로 옮기면 어떤 이점이 있을까요?'},
 };
 
+const reviewLineMatchers: Partial<Record<string,string[]>> = {
+  'bridge:jonghyuck':['while (true)'],
+  'bridge:yeajeong':['selected ==','cnt =='],
+  'prerequisite:taekgi':['semester[g] = Math.max','semester[next] = Math.max'],
+  'island:taekgi':['selectedEdgeCnt == n - 1','selectedEdgeCount == n - 1'],
+  'brick:taekgi':['blocks = copyBlocks','blocks = snapshot'],
+  'block:taekgi':['blocks.add(i, removed)','blocks.add(index, removed)'],
+};
+
 const statusText: Record<SubmissionStatus,string> = { done:'풀이 완료', progress:'작성 중', empty:'미제출' };
+
+const reviewPersona = {
+  name: '코딩테스트 멘토',
+  experience: '알고리즘 풀이 경력 10년+',
+  specialty: '기업 코딩테스트 · 삼성 SW 역량테스트',
+  method: '정답 근거 → 놓친 조건 → 가장 쉬운 개선 순서',
+  principles: '정답 가능성, 입력 제한, 복잡도, 반례를 근거로 평가하고 쉬운 접근을 최대 3단계로 설명한다.',
+};
+
+const problemMatchers: Record<string,string[]> = {
+  bridge:['17472'], processor:['1767','1167','processor'], prerequisite:['14567'], island:['42861','섬연결'],
+  redundant:['LTC_684','redundant'], pirate:['해적선장','pirate','coddy'], ricochet:['169199','리코쳇'],
+  tree:['나무높이'], menu:['72411','메뉴리뉴얼'], height:['5643','키순서'], supply:['1249','보급로'],
+  brick:['5656','벽돌깨기'], block:['26071','블록제거'],
+};
+
+const repoTreeCache = new Map<string,Promise<string[]>>();
+
+function githubRawUrl(url:string) {
+  return url.replace('https://github.com/','https://raw.githubusercontent.com/').replace('/blob/','/');
+}
+
+function encodeGithubPath(path:string) {
+  return path.split('/').map((part) => encodeURIComponent(part)).join('/');
+}
+
+async function getRepositoryTree(repository:string) {
+  if (!repoTreeCache.has(repository)) {
+    repoTreeCache.set(repository, fetch(`https://api.github.com/repos/ssafy-16th-algorithm/${repository}/git/trees/main?recursive=1`, { cache:'no-store' })
+      .then((response) => {
+        if (!response.ok) throw new Error('tree sync failed');
+        return response.json();
+      })
+      .then((data:{tree?:Array<{path:string;type:string}>}) => (data.tree ?? [])
+        .filter((item) => item.type === 'blob' && /\.(java|kt|py|cpp|cc|c|js|ts)$/i.test(item.path))
+        .map((item) => item.path)));
+  }
+  return repoTreeCache.get(repository)!;
+}
+
+async function discoverGithubCode(problem:Problem, memberId:MemberId) {
+  const member = members.find((item) => item.id === memberId)!;
+  const exactUrl = solutionUrls[`${problem.id}:${memberId}`];
+  if (exactUrl) return { rawUrl:githubRawUrl(exactUrl), htmlUrl:exactUrl };
+
+  const paths = await getRepositoryTree(member.handle);
+  const matchers = problemMatchers[problem.id].map((matcher) => matcher.toLocaleLowerCase().replace(/[\s_-]/g,''));
+  const path = paths.find((candidate) => {
+    const normalized = candidate.toLocaleLowerCase().replace(/[\s_-]/g,'');
+    return matchers.some((matcher) => normalized.includes(matcher));
+  });
+  if (!path) throw new Error('solution file not found');
+
+  const encodedPath = encodeGithubPath(path);
+  return {
+    rawUrl:`https://raw.githubusercontent.com/ssafy-16th-algorithm/${member.handle}/main/${encodedPath}`,
+    htmlUrl:`https://github.com/ssafy-16th-algorithm/${member.handle}/blob/main/${encodedPath}`,
+  };
+}
 
 function getSource(problem: Problem, memberId: MemberId) {
   const member = members.find((item) => item.id === memberId)!;
@@ -156,11 +225,25 @@ function getSource(problem: Problem, memberId: MemberId) {
   return { label:solutionUrl ? '원본 코드' : member.sourceLabel, url:solutionUrl ?? member.sourceUrl };
 }
 
+function CodeViewer({code,matchers}:{code:string;matchers?:string[]}) {
+  const lines = code.replace(/\r\n/g,'\n').split('\n');
+  const reviewedLine = matchers ? lines.findIndex((line) => matchers.some((matcher) => line.includes(matcher))) : -1;
+
+  return (
+    <pre className="codeViewer" tabIndex={0} aria-label="전체 풀이 코드. 가로와 세로로 스크롤할 수 있습니다.">
+      <code>{lines.map((line,index) => <span className={`codeLine ${index===reviewedLine?'reviewed':''}`} key={`${index}-${line.slice(0,12)}`}><span className="lineNumber">{index+1}</span><span className="lineText">{line || ' '}</span>{index===reviewedLine && <span className="lineReviewMark">AI 리뷰</span>}</span>)}</code>
+    </pre>
+  );
+}
+
 export default function Home() {
   const [theme,setTheme] = useState<Theme>('light');
   const [selectedWeek,setSelectedWeek] = useState(5);
   const [selectedProblemId,setSelectedProblemId] = useState('block');
   const [selectedMemberId,setSelectedMemberId] = useState<MemberId>('taekgi');
+  const [syncedCode,setSyncedCode] = useState<string|null>(null);
+  const [syncedSourceUrl,setSyncedSourceUrl] = useState<string|null>(null);
+  const [syncState,setSyncState] = useState<'loading'|'github'|'notion'|'unavailable'>('loading');
 
   const visibleProblems = useMemo(() => problems.filter((problem) => problem.week === selectedWeek), [selectedWeek]);
   const selectedProblem = problems.find((problem) => problem.id === selectedProblemId) ?? visibleProblems[0];
@@ -168,8 +251,10 @@ export default function Home() {
   const selectedStatus = selectedProblem.statuses[selectedMemberId];
   const detailKey = `${selectedProblem.id}:${selectedMemberId}`;
   const source = getSource(selectedProblem, selectedMemberId);
-  const code = codePreviews[detailKey];
+  const fallbackCode = codePreviews[detailKey] ?? null;
+  const code = syncedCode;
   const review = reviews[detailKey];
+  const sourceFileName = decodeURIComponent((syncedSourceUrl ?? source.url).split('/').pop() || 'solution.java');
   const completedCount = members.filter((member) => selectedProblem.statuses[member.id] === 'done').length;
 
   useEffect(() => {
@@ -178,6 +263,41 @@ export default function Home() {
     });
     return () => cancelAnimationFrame(frame);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncCode = async () => {
+      await Promise.resolve();
+      if (cancelled) return;
+      setSyncState(selectedStatus === 'empty' ? 'unavailable' : 'loading');
+      setSyncedCode(null);
+      setSyncedSourceUrl(null);
+
+      if (selectedStatus === 'empty') return;
+
+      try {
+        const githubSource = await discoverGithubCode(selectedProblem, selectedMemberId);
+        const response = await fetch(githubSource.rawUrl, { cache:'no-store' });
+        if (!response.ok) throw new Error('code sync failed');
+        const latestCode = await response.text();
+        if (!cancelled) {
+          setSyncedCode(latestCode);
+          setSyncedSourceUrl(githubSource.htmlUrl);
+          setSyncState('github');
+        }
+      } catch {
+        if (!cancelled) {
+          setSyncedCode(fallbackCode);
+          setSyncedSourceUrl(selectedProblem.notionUrl);
+          setSyncState(fallbackCode ? 'notion' : 'unavailable');
+        }
+      }
+    };
+
+    void syncCode();
+    return () => { cancelled = true; };
+  }, [detailKey, fallbackCode, selectedMemberId, selectedProblem, selectedStatus]);
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark';
@@ -213,8 +333,12 @@ export default function Home() {
 
       <main>
         <section className="intro">
-          <div><p className="eyebrow"><span className="liveDot"/> NOTION SNAPSHOT · 2026.08.24</p><h1>이번 주 문제부터<br/>코드 리뷰까지, 한 번에.</h1><p className="introText">노션에 정리된 문제를 주차별로 탐색하고, 문제 하나를 선택해 멤버별 풀이와 AI 리뷰를 나란히 확인하세요.</p></div>
-          <aside className="quickNote"><span className="noteIcon">N</span><div><strong>노션을 기준으로 동기화</strong><p>5개 주차 · 13개 문제 · 4명</p></div></aside>
+          <div><p className="eyebrow"><span className="liveDot"/> NOTION + GITHUB SYNC · 2026.08.24</p><h1>이번 주 문제부터<br/>코드 리뷰까지, 한 번에.</h1><p className="introText">Notion의 주차별 문제와 GitHub의 최신 풀이 코드를 연결했습니다. 문제 하나를 선택해 멤버별 코드와 AI 리뷰를 나란히 확인하세요.</p></div>
+          <aside className="quickNote" aria-label="데이터 동기화 출처">
+            <div className="syncItem"><Image src="/notion-mark.png" width={46} height={46} alt="Notion"/><div><strong>Notion 문제 동기화</strong><p>5개 주차 · 13개 문제 · 4명</p></div></div>
+            <div className="syncDivider"><span>＋</span></div>
+            <div className="syncItem"><Image src="/github-mark.png" width={46} height={46} alt="GitHub"/><div><strong>GitHub 코드 동기화</strong><p>공개 저장소 우선 · 없으면 Notion</p></div></div>
+          </aside>
         </section>
 
         <section className="studyBrowser" id="study-browser" aria-label="주차별 문제와 풀이 탐색">
@@ -251,8 +375,8 @@ export default function Home() {
               <div className="emptyState"><span className="emptyIcon">＋</span><h3>아직 등록된 풀이가 없습니다.</h3><p>{selectedMember.name}님의 풀이가 Notion 또는 GitHub에 추가되면 이 자리에 코드와 리뷰가 표시됩니다.</p><a href={selectedProblem.notionUrl} target="_blank" rel="noreferrer">Notion 문제 페이지 ↗</a></div>
             ) : (
               <div className="solutionStack">
-                <article className="codeCard"><div className="cardBar"><div><span className={`statusDot ${selectedStatus}`}/><strong>{selectedMember.name}의 풀이</strong></div><a href={source.url} target="_blank" rel="noreferrer">{source.label} ↗</a></div>{code ? <pre><code>{code}</code></pre> : <div className="codePending"><span>⌁</span><strong>코드 원문 연결됨</strong><p>원문은 확인할 수 있으며, 이 페이지의 코드 미리보기는 다음 동기화에서 생성됩니다.</p><a href={source.url} target="_blank" rel="noreferrer">원문에서 코드 보기 ↗</a></div>}</article>
-                <aside className="reviewCard"><div className="reviewLabel"><span>AI</span><div><strong>코드 리뷰</strong><small>실행 흐름 · 정확성 · 개선점</small></div></div>{review ? <><span className="reviewTag">{review.label}</span><h3>{review.title}</h3><p>{review.body}</p><div className="reviewQuestion"><span>다음 질문</span><p>{review.question}</p></div></> : <><span className="reviewTag muted">분석 대기</span><h3>코드 미리보기 생성 후 리뷰합니다.</h3><p>원문 수집은 완료됐습니다. 정적 분석이 끝나면 실행 흐름과 개선 질문을 이 영역에 공개합니다.</p><div className="reviewQuestion"><span>현재 상태</span><p>{selectedStatus === 'progress' ? '작성 중인 풀이를 추적하고 있습니다.' : '다음 동기화 작업을 기다리고 있습니다.'}</p></div></>}</aside>
+                <article className="codeCard"><div className="cardBar"><div><span className={`statusDot ${selectedStatus}`}/><span className="fileIdentity"><strong>{sourceFileName}</strong><small>{selectedMember.name} · Java</small></span><span className={`syncState ${syncState}`}>{syncState==='loading'?'동기화 중':syncState==='github'?'GitHub 최신':syncState==='notion'?'Notion 기준':'코드 없음'}</span></div><a href={syncedSourceUrl ?? source.url} target="_blank" rel="noreferrer">{syncState==='notion'?'Notion 원문':source.label} ↗</a></div>{syncState==='loading' ? <div className="codePending"><span className="syncSpinner"/><strong>최신 코드를 불러오는 중</strong><p>공개 GitHub 저장소를 확인하고 있습니다.</p></div> : code ? <CodeViewer code={code} matchers={review ? reviewLineMatchers[detailKey] : undefined}/> : <div className="codePending"><span>⌁</span><strong>연결된 코드가 없습니다</strong><p>GitHub 파일을 찾지 못했고 저장된 Notion 코드도 없습니다.</p><a href={selectedProblem.notionUrl} target="_blank" rel="noreferrer">Notion 문제 페이지 ↗</a></div>}</article>
+                <aside className="reviewCard"><p className="srOnly">{reviewPersona.principles}</p><div className="reviewLabel"><span>AI</span><div><strong>{reviewPersona.name}</strong><small>{reviewPersona.specialty}</small></div></div><div className="personaMeta"><span>{reviewPersona.experience}</span><p>{reviewPersona.method}</p></div>{review ? <><span className="reviewTag">{review.label}</span><h3>{review.title}</h3><p>{review.body}</p><div className="reviewQuestion"><span>다음 질문</span><p>{review.question}</p></div></> : <><span className="reviewTag muted">분석 대기</span><h3>코드 미리보기 생성 후 리뷰합니다.</h3><p>정답 가능성, 입력 제한, 복잡도와 누락 조건을 순서대로 확인한 뒤 핵심 근거만 남깁니다.</p><div className="reviewQuestion"><span>현재 상태</span><p>{selectedStatus === 'progress' ? '작성 중인 풀이를 추적하고 있습니다.' : '다음 동기화 작업을 기다리고 있습니다.'}</p></div></>}</aside>
               </div>
             )}
           </section>
