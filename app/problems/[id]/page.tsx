@@ -1,0 +1,173 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useParams } from 'next/navigation';
+import Link from 'next/link';
+import SiteHeader from '../../components/site-header';
+import type { ProblemDetail, StudySolution } from '../../lib/study';
+
+type ReviewIssue = {kind:'삭제 후보'|'개선'|'오류 위험'|'알고리즘';title:string;evidence:string;impact:string;suggestion:string;line:number};
+type Review = {
+  verdict:string;
+  complexity:string;
+  issues:ReviewIssue[];
+  betterApproach:{title:string;steps:string[];complexity:string};
+  testCase:string;
+  highlightLines:number[];
+};
+
+const reviewCache=new Map<string,Review>();
+
+function CodeViewer({solution,highlights}:{solution:StudySolution;highlights:number[]}) {
+  const lines=(solution.code ?? '').replace(/\r\n/g,'\n').split('\n');
+  const marked=new Set(highlights);
+  return <pre className="wideCode" tabIndex={0} aria-label="전체 풀이 코드">
+    <code>{lines.map((line,index)=><span className={`codeLine ${marked.has(index+1)?'reviewed':''}`} key={index}>
+      <span className="lineNumber">{index+1}</span><span className="lineText">{line || ' '}</span>
+      {marked.has(index+1)?<span className="lineReviewMark">리뷰</span>:null}
+    </span>)}</code>
+  </pre>;
+}
+
+export default function ProblemPage() {
+  const params=useParams<{id:string}>();
+  const problemId=params.id;
+  const [detail,setDetail]=useState<ProblemDetail|null>(null);
+  const [selectedMemberId,setSelectedMemberId]=useState('');
+  const [loading,setLoading]=useState(true);
+  const [syncError,setSyncError]=useState('');
+  const [review,setReview]=useState<Review|null>(null);
+  const [reviewStatus,setReviewStatus]=useState<'idle'|'loading'|'ready'|'error'>('idle');
+  const [reviewError,setReviewError]=useState('');
+
+  const sync=useCallback(async (silent=false)=>{
+    await Promise.resolve();
+    if (!silent) setLoading(true);
+    try {
+      const response=await fetch(`/api/study?problemId=${encodeURIComponent(problemId)}`,{cache:'no-store'});
+      const body=await response.json() as ProblemDetail & {error?:string};
+      if (!response.ok) throw new Error(body.error || '문제 동기화에 실패했습니다.');
+      setDetail(body);
+      setSyncError('');
+      setSelectedMemberId((current)=>body.solutions.some((solution)=>solution.member.id===current)
+        ? current
+        : body.solutions.find((solution)=>solution.code)?.member.id ?? body.solutions[0]?.member.id ?? '');
+    } catch (reason) {
+      setSyncError(reason instanceof Error?reason.message:'문제 동기화에 실패했습니다.');
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  },[problemId]);
+
+  useEffect(()=>{
+    const frame=requestAnimationFrame(()=>void sync());
+    const timer=window.setInterval(()=>{
+      if (document.visibilityState==='visible') void sync(true);
+    },30000);
+    return ()=>{cancelAnimationFrame(frame);window.clearInterval(timer);};
+  },[sync]);
+
+  const selected=detail?.solutions.find((solution)=>solution.member.id===selectedMemberId) ?? null;
+  const reviewKey=selected?.code ? `${detail?.problem.id}:${selected.member.id}:${selected.code}` : '';
+
+  const requestReview=useCallback(async (solution:StudySolution,cacheKey:string)=>{
+    setReviewStatus('loading');
+    setReviewError('');
+    try {
+      const cached=reviewCache.get(cacheKey);
+      if (cached) {
+        setReview(cached);
+        setReviewStatus('ready');
+        return;
+      }
+      const response=await fetch('/api/review',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          problem:{title:detail?.problem.title,externalUrl:detail?.problem.externalUrl},
+          member:solution.member.name,
+          language:solution.language,
+          code:solution.code,
+        }),
+      });
+      const body=await response.json() as {review?:Review;error?:string};
+      if (!response.ok || !body.review) throw new Error(body.error || 'AI 리뷰 생성에 실패했습니다.');
+      reviewCache.set(cacheKey,body.review);
+      setReview(body.review);
+      setReviewStatus('ready');
+    } catch (reason) {
+      setReviewStatus('error');
+      setReviewError(reason instanceof Error?reason.message:'AI 리뷰 생성에 실패했습니다.');
+    }
+  },[detail]);
+
+  useEffect(()=>{
+    let cancelled=false;
+    const autoReview=async ()=>{
+      await Promise.resolve();
+      if (cancelled) return;
+      setReview(null);
+      if (!selected?.code || !reviewKey) {
+        setReviewStatus('idle');
+        setReviewError('');
+        return;
+      }
+      await requestReview(selected,reviewKey);
+    };
+    void autoReview();
+    return ()=>{cancelled=true;};
+  },[requestReview,reviewKey,selected]);
+
+  const completed=useMemo(()=>detail?.solutions.filter((solution)=>solution.code).length ?? 0,[detail]);
+
+  return <div className="appShell">
+    <SiteHeader/>
+    <main className="detailMain">
+      <div className="detailTopline"><Link href="/">← 문제 목록</Link><button type="button" className="textButton" onClick={()=>void sync()} disabled={loading}>{loading?'동기화 중…':'지금 동기화'}</button></div>
+
+      {loading && !detail?<div className="loadingPanel"><span className="syncSpinner"/><strong>Notion 문제 템플릿을 읽는 중입니다.</strong></div>:null}
+      {syncError?<div className="errorPanel"><strong>실시간 동기화에 실패했습니다.</strong><p>{syncError}</p><button type="button" onClick={()=>void sync()}>다시 시도</button></div>:null}
+
+      {detail?<>
+        <header className="problemHero">
+          <div><p className="eyebrow">WEEK {detail.problem.week}</p><h1>{detail.problem.title}</h1><p>{detail.problem.date || '날짜 미정'} · {completed}/4명 코드 연결</p></div>
+          <div className="problemActions">
+            <a href={detail.problem.notionUrl} target="_blank" rel="noreferrer">Notion ↗</a>
+            {detail.problem.externalUrl?<a className="primaryButton" href={detail.problem.externalUrl} target="_blank" rel="noreferrer">문제 원문 ↗</a>:null}
+          </div>
+        </header>
+
+        <nav className="memberTabs" aria-label="멤버 코드 선택">
+          {detail.solutions.map((solution)=><button key={solution.member.id} type="button" className={selectedMemberId===solution.member.id?'selected':''} onClick={()=>setSelectedMemberId(solution.member.id)}>
+            <span className={`memberAvatar ${solution.member.tone}`}>{solution.member.name.slice(-1)}</span>
+            <span><strong>{solution.member.name}</strong><small className={solution.code?'done':'empty'}>{solution.code?(solution.source==='notion'?'Notion 코드':'GitHub 코드'):'코드 없음'}</small></span>
+          </button>)}
+        </nav>
+
+        {selected?.code?<section className="workspace">
+          <div className="codePanel">
+            <div className="panelBar"><div><span className="statusDot done"/><strong>{selected.member.name} · {selected.language}</strong><span className="sourceBadge">{selected.source==='notion'?'Notion 첫 코드 블록':'GitHub 최신'}</span></div><a href={selected.sourceUrl} target="_blank" rel="noreferrer">원문 ↗</a></div>
+            <CodeViewer solution={selected} highlights={review?.highlightLines ?? []}/>
+          </div>
+
+          <section className="aiReview">
+            <div className="reviewHeading"><div><span className="aiMark">AI</span><span><strong>개선 중심 코드 리뷰</strong><small>불필요한 코드 · 구현 개선 · 더 나은 알고리즘</small></span></div>{reviewStatus==='loading'?<span className="reviewLoading"><i className="syncSpinner"/> 분석 중</span>:null}</div>
+
+            {review?<div className="reviewBody">
+              <div className="reviewSummary"><span>우선순위</span><h2>{review.verdict}</h2><p><strong>복잡도</strong> {review.complexity}</p></div>
+              <div className="issueList">{review.issues.map((issue,index)=><article className="issueCard" key={issue.line+'-'+index}>
+                <div><span className={`issueKind kind${index%4}`}>{issue.kind}</span><small>LINE {issue.line}</small></div>
+                <h3>{issue.title}</h3><p><strong>근거</strong>{issue.evidence}</p><p><strong>영향</strong>{issue.impact}</p><p className="suggestion"><strong>수정</strong>{issue.suggestion}</p>
+              </article>)}</div>
+              <article className="approachCard"><span>더 나은 접근</span><h3>{review.betterApproach.title}</h3><ol>{review.betterApproach.steps.map((step)=><li key={step}>{step}</li>)}</ol><p>{review.betterApproach.complexity}</p></article>
+              <div className="testCase"><strong>검증할 반례</strong><p>{review.testCase}</p></div>
+            </div>:null}
+
+            {reviewStatus==='error'?<div className="reviewFallback"><strong>자동 리뷰를 완료하지 못했습니다.</strong><p>{reviewError}</p><button className="primaryButton" type="button" onClick={()=>selected.code&&void requestReview(selected,reviewKey)}>AI 리뷰 받기</button></div>:null}
+            {reviewStatus==='idle'?<div className="reviewFallback"><strong>리뷰할 코드가 없습니다.</strong></div>:null}
+          </section>
+        </section>:<div className="emptyCode"><strong>{selected?.member.name}님의 첫 번째 코드 블록이 아직 없습니다.</strong><p>Notion 멤버 페이지에 코드를 추가하면 이 페이지가 30초 안에 자동으로 다시 확인합니다.</p><a href={selected?.sourceUrl} target="_blank" rel="noreferrer">작성 페이지 열기 ↗</a></div>}
+      </>:null}
+    </main>
+  </div>;
+}
