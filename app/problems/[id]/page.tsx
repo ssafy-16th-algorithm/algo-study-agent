@@ -196,7 +196,12 @@ export default function ProblemPage() {
               code:solution.code,
             }),
           });
-          const body=await response.json() as {review?:Review;error?:string};
+          const responseText=await response.text();
+          let body:{review?:Review;error?:string}={};
+          if(responseText) {
+            try { body=JSON.parse(responseText) as {review?:Review;error?:string}; }
+            catch { body={error:`코드 리뷰 서버가 올바르지 않은 응답을 반환했습니다. (${response.status})`}; }
+          }
           if (!response.ok || !body.review) throw new Error(body.error || 'AI 리뷰 생성에 실패했습니다.');
           reviewCache.set(cacheKey,body.review);
           storeReview(cacheKey,body.review);

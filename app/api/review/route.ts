@@ -67,7 +67,9 @@ export async function POST(request:Request) {
 
   const key = await sha256(JSON.stringify({version:8,problem:input.problem,language:input.language,code}));
   const cacheUrl = new URL(`https://algorithm-review-cache.internal/${key}`);
-  const workerCache = (globalThis.caches as CacheStorage & {default?:Cache}).default;
+  const workerCache = typeof globalThis.caches === 'undefined'
+    ? undefined
+    : (globalThis.caches as CacheStorage & {default?:Cache}).default;
   const cached = workerCache ? await workerCache.match(cacheUrl) : undefined;
   if (cached) return new NextResponse(cached.body,{
     status:cached.status,
@@ -110,15 +112,21 @@ export async function POST(request:Request) {
     headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},
     body:JSON.stringify(body),
   });
-  let response = await callGroq(reviewRequest);
-  if (response.status === 413 && reviewRequest.model === 'groq/compound') {
-    console.warn('Groq Compound request too large; retrying with direct model');
-    const fallbackRequest={...reviewRequest,model:'openai/gpt-oss-20b',max_completion_tokens:1200,reasoning_effort:'low'};
-    response = await callGroq(fallbackRequest);
-    if (response.status === 400) {
-      console.warn('Groq JSON mode rejected; retrying with prompt-only JSON');
-      response = await callGroq({...fallbackRequest,response_format:undefined});
+  let response:Response;
+  try {
+    response = await callGroq(reviewRequest);
+    if (response.status === 413 && reviewRequest.model === 'groq/compound') {
+      console.warn('Groq Compound request too large; retrying with direct model');
+      const fallbackRequest={...reviewRequest,model:'openai/gpt-oss-20b',max_completion_tokens:1200,reasoning_effort:'low'};
+      response = await callGroq(fallbackRequest);
+      if (response.status === 400) {
+        console.warn('Groq JSON mode rejected; retrying with prompt-only JSON');
+        response = await callGroq({...fallbackRequest,response_format:undefined});
+      }
     }
+  } catch (error) {
+    console.error('AI review request failed',error);
+    return NextResponse.json({error:'코드 리뷰 서버에 연결하지 못했습니다.'},{status:502});
   }
 
   if (!response.ok) {
