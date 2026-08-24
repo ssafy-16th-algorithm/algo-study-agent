@@ -1,15 +1,5 @@
 import { NextResponse } from 'next/server';
-
-type ReviewRequest = { problem?:{title?:string;externalUrl?:string|null}; member?:string; language?:string; code?:string };
-type ReviewIssue = { kind:'삭제 후보'|'개선'|'오류 위험'|'알고리즘'; title:string; evidence:string; impact:string; suggestion:string; line:number };
-type Review = {
-  verdict:string;
-  complexity:string;
-  issues:ReviewIssue[];
-  betterApproach:{title:string;steps:string[];complexity:string};
-  testCase:string;
-  highlightLines:number[];
-};
+import type { Review, ReviewIssue, ReviewRequest } from '../../lib/review';
 
 const requestWindows = new Map<string,{count:number;resetAt:number}>();
 
@@ -56,6 +46,7 @@ function normalizeReview(value:unknown):Review|null {
       evidence:typeof issue.evidence==='string'&&issue.evidence.trim()?issue.evidence.trim():`${line}번 줄을 확인하세요.`,
       impact:typeof issue.impact==='string'&&issue.impact.trim()?issue.impact.trim():'가독성 또는 안정성에 영향을 줄 수 있습니다.',
       suggestion:suggestion||'해당 로직을 단순화하세요.',
+      codeExample:typeof issue.codeExample==='string'&&issue.codeExample.trim()?issue.codeExample.trim().slice(0,1500):undefined,
       line,
     }];
   }).slice(0,3);
@@ -96,7 +87,7 @@ export async function POST(request:Request) {
     return NextResponse.json({error:'리뷰할 코드가 없거나 너무 깁니다.'},{status:400});
   }
 
-  const key = await sha256(JSON.stringify({version:9,problem:input.problem,language:input.language,code}));
+  const key = await sha256(JSON.stringify({version:10,problem:input.problem,language:input.language,code}));
   const cacheUrl = new URL(`https://algorithm-review-cache.internal/${key}`);
   const workerCache = typeof globalThis.caches === 'undefined'
     ? undefined
@@ -117,10 +108,15 @@ export async function POST(request:Request) {
       messages:[{
         role:'system',
         content:[
-          '코딩테스트 코드 리뷰어다. 한국어로 짧고 구체적으로 답한다.',
-          '칭찬·서론·반복은 쓰지 않는다. 실제 코드 근거가 있는 핵심 문제 2~3개만 고른다.',
+          'Java를 막 배우는 코딩테스트 초보자의 친절한 코드 리뷰 선생님이다.',
+          '쉬운 한국어로 설명하고 어려운 용어는 처음 나올 때 뜻을 풀어 쓴다.',
+          '잘못됐다고만 말하지 말고 왜 문제인지, 언제 문제가 생기는지, 어떻게 고치는지 순서대로 알려준다.',
+          '비난하거나 단정하지 말고 잘한 선택이 있으면 짧게 인정한다. 서론과 반복은 쓰지 않는다.',
+          '실제 코드 근거가 있는 핵심 문제 2~3개만 고른다.',
           '우선순위는 오류 위험, 복잡도, 불필요한 코드, 구현 단순화 순이다.',
-          '각 문장은 80자 이내로 쓰고 전체 응답은 간결하게 유지한다.',
+          '수정 모습을 보여주는 편이 이해에 도움이 될 때만 codeExample에 짧은 Java 코드를 넣는다.',
+          '코드 예시는 전체 답변에서 최대 1개, 12줄 이하로 제한하고 필요 없으면 빈 문자열로 둔다.',
+          '각 문장은 100자 이내로 쓰고 전체 응답은 간결하게 유지한다.',
         ].join(' '),
       },{
         role:'user',
@@ -131,7 +127,7 @@ export async function POST(request:Request) {
         '코드:',
         code,
           'JSON만 출력:',
-          '{"verdict":"최우선 수정 1문장","complexity":"현재 시간/공간 복잡도","issues":[{"kind":"삭제 후보|개선|오류 위험|알고리즘","title":"짧은 제목","evidence":"코드 근거","impact":"영향","suggestion":"수정법","line":1}],"betterApproach":{"title":"접근 이름","steps":["단계1","단계2"],"complexity":"개선 복잡도"},"testCase":"반례 1개","highlightLines":[1]}',
+          '{"verdict":"초보자가 먼저 고칠 내용 1문장","complexity":"현재 시간/공간 복잡도를 쉬운 말로 설명","issues":[{"kind":"삭제 후보|개선|오류 위험|알고리즘","title":"쉬운 제목","evidence":"어느 코드가 왜 문제인지","impact":"실행할 때 생길 수 있는 일","suggestion":"순서가 보이는 구체적인 수정법","codeExample":"필요할 때만 짧은 Java 코드, 아니면 빈 문자열","line":1}],"betterApproach":{"title":"쉬운 접근 이름","steps":["초보자가 따라 할 단계1","단계2"],"complexity":"개선 결과를 쉬운 말로 설명"},"testCase":"직접 실행해 볼 입력과 예상 결과","highlightLines":[1]}',
           '위 JSON의 문구는 구조 설명용이다. 모든 값은 제공된 코드를 실제 분석해 작성하고 예시 문구를 그대로 복사하지 않는다.',
           'issues는 2~3개, steps는 2~3개로 제한한다.',
         ].join('\n'),

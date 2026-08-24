@@ -24,7 +24,9 @@ NOTION_TOKEN=...           # Notion 실시간 동기화에 필요
 NOTION_PROBLEMS_DATA_SOURCE_ID=2dca717ec99e82a2ae1687ec3d44366a # 선택 사항
 ```
 
-`NOTION_TOKEN`은 SSAFY 16기 스터디 페이지와 하위 데이터베이스에 읽기 권한이 있어야 합니다. 문제 상세 페이지는 30초마다 현재 Notion 코드를 다시 확인합니다. AI 리뷰는 코드 해시로 캐시하며, 자동 생성 실패 시 상세 페이지에서 수동 재시도 버튼을 제공합니다.
+`NOTION_TOKEN`은 SSAFY 16기 스터디 페이지와 하위 데이터베이스에 읽기 권한이 있어야 합니다. 문제 상세 페이지는 60초마다 현재 Notion 코드를 다시 확인합니다. 전략과 후기는 제한된 Markdown 문법으로 안전하게 표시합니다. AI 리뷰는 버튼을 눌렀을 때만 생성하며 코드 해시로 캐시합니다.
+
+코드 구조와 변경 원칙은 [`REFACTORING.md`](./REFACTORING.md)를 따릅니다.
 
 ## 실행
 

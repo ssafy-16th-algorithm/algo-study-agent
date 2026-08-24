@@ -76,7 +76,7 @@ export default function Home() {
           <h1>문제를 선택해주세요.<br/>워크스페이스로 이동합니다.</h1>
         </div>
         <aside className="sourcePanel">
-          <div><a className="sourceIconLink" href="https://app.notion.com/p/3c5a717ec99e80e3b24df528768d2ce1" target="_blank" rel="noreferrer" aria-label="SSAFY ALGO Notion 열기"><Image src="/notion-mark.png" width={42} height={42} alt=""/></a><span><strong>Notion</strong><small>문제 · 멤버 · 첫 코드 블록</small></span></div>
+          <div><a className="sourceIconLink" href="https://app.notion.com/p/3c5a717ec99e80e3b24df528768d2ce1" target="_blank" rel="noreferrer" aria-label="SSAFY ALGO Notion 열기"><Image src="/notion-mark.png" width={42} height={42} alt=""/></a><span><strong>Notion</strong><small>문제 · 멤버 · 코드 블록</small></span></div>
           <div><a className="sourceIconLink" href="https://github.com/ssafy-16th-algorithm" target="_blank" rel="noreferrer" aria-label="SSAFY ALGO GitHub 열기"><Image src="/github-mark.png" width={42} height={42} alt=""/></a><span><strong>GitHub</strong><small>Notion 코드가 없을 때 조회</small></span></div>
         </aside>
       </section>
@@ -84,7 +84,7 @@ export default function Home() {
       <section className="problemBoard" aria-live="polite">
         <div className="boardHeader">
           <div><p className="eyebrow">PROBLEMS</p><h2>주차별 문제</h2></div>
-          <button className="textButton" type="button" onClick={()=>void sync(true)} disabled={loading}>{loading?'동기화 중…':'지금 동기화'}</button>
+          <button className="textButton" type="button" onClick={()=>void sync(true)} disabled={loading}>{loading?'동기화 중…':'문제 동기화'}</button>
         </div>
 
         {loading && !data ? <div className="loadingPanel"><span className="syncSpinner"/><strong>Notion에서 문제를 읽는 중입니다.</strong></div> : null}
@@ -116,6 +116,6 @@ export default function Home() {
         {progressLoading&&!progress.length?<div className="crewSkeleton"><i/><i/><i/><i/></div>:null}
       </section>
     </main>
-    <footer><span>Notion 실시간 읽기 · 공개 열람</span><a href="https://app.notion.com/p/3c5a717ec99e80e3b24df528768d2ce1" target="_blank" rel="noreferrer">원본 Notion ↗</a></footer>
+    <footer><span>SSAFY 16TH ALGORITHM STUDY 2026</span><a href="https://app.notion.com/p/3c5a717ec99e80e3b24df528768d2ce1" target="_blank" rel="noreferrer">원본 Notion ↗</a></footer>
   </div>;
 }
