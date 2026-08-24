@@ -141,9 +141,9 @@ async function githubTree(member:Member) {
     githubTreeCache.set(member.id,fetch(`https://api.github.com/repos/ssafy-16th-algorithm/${member.handle}/git/trees/main?recursive=1`,{cache:'no-store'})
       .then((response)=> {
         if (!response.ok) throw new Error(`GitHub tree ${response.status}`);
-        return response.json();
+        return response.json() as Promise<{tree?:Array<{path:string;type:string}>}>;
       })
-      .then((data:{tree?:Array<{path:string;type:string}>})=>(data.tree ?? [])
+      .then((data)=>(data.tree ?? [])
         .filter((item)=>item.type === 'blob' && /\.(java|kt|py|cpp|cc|c|js|ts)$/i.test(item.path))
         .map((item)=>item.path)));
   }

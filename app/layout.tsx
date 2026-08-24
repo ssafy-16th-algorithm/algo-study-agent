@@ -1,9 +1,6 @@
 import type { Metadata } from 'next';
-import { Inter, Noto_Sans_KR } from 'next/font/google';
 import './globals.css';
 
-const inter = Inter({ variable: '--font-inter', subsets: ['latin'] });
-const notoSansKr = Noto_Sans_KR({ variable: '--font-korean', subsets: ['latin'], weight: ['400','500','600','700'] });
 const siteUrl = 'https://ssafy16-algostudy-agent.hyuck990324.chatgpt.site';
 
 export const metadata: Metadata = {
@@ -26,5 +23,5 @@ export const metadata: Metadata = {
 const themeScript = `(function(){try{var saved=localStorage.getItem('algostudy-theme');var theme=saved||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.dataset.theme=theme;}catch(e){document.documentElement.dataset.theme='light';}})();`;
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="ko" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{__html:themeScript}} /></head><body className={`${inter.variable} ${notoSansKr.variable}`}>{children}</body></html>;
+  return <html lang="ko" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{__html:themeScript}} /></head><body>{children}</body></html>;
 }
