@@ -110,7 +110,7 @@ export async function POST(request:Request) {
 
   const apiBaseUrl = (process.env.LLM_BASE_URL || 'https://api.groq.com/openai/v1').replace(/\/$/,'');
   const reviewRequest = {
-      model:process.env.LLM_REVIEW_MODEL || 'groq/compound',
+      model:process.env.LLM_REVIEW_MODEL || 'groq/compound-mini',
       max_completion_tokens:512,
       tool_choice:'none',
       citation_options:'disabled',
@@ -146,7 +146,7 @@ export async function POST(request:Request) {
   let response:Response;
   try {
     response = await callGroq(reviewRequest);
-    if (response.status === 413 && reviewRequest.model === 'groq/compound') {
+    if (response.status === 413 && reviewRequest.model.startsWith('groq/compound')) {
       console.warn('Groq Compound request too large; retrying with direct model');
       const fallbackRequest={...reviewRequest,model:'openai/gpt-oss-20b',max_completion_tokens:512,reasoning_effort:'low'};
       response = await callGroq(fallbackRequest);

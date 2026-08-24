@@ -18,7 +18,7 @@ AI 리뷰는 브라우저가 아닌 `/api/review` 서버 라우트에서 생성�
 
 ```text
 LLM_API_KEY=...
-LLM_REVIEW_MODEL=groq/compound
+LLM_REVIEW_MODEL=groq/compound-mini
 LLM_BASE_URL=https://api.groq.com/openai/v1  # 선택 사항
 NOTION_TOKEN=...           # Notion 실시간 동기화에 필요
 NOTION_PROBLEMS_DATA_SOURCE_ID=2dca717ec99e82a2ae1687ec3d44366a # 선택 사항
