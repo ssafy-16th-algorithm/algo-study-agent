@@ -20,6 +20,8 @@ export type StudyProblem = {
 export type StudySolution = {
   member:Member;
   code:string|null;
+  strategy:string;
+  retrospective:string;
   language:string;
   source:'notion'|'github'|null;
   sourceUrl:string;

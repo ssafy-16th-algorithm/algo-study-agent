@@ -39,6 +39,7 @@ type NotionBlock = {
   type:string;
   has_children?:boolean;
   code?:{rich_text?:RichText[];language?:string};
+  [key:string]:unknown;
 };
 
 function notionHeaders(token:string) {
@@ -93,20 +94,38 @@ async function getBlockChildren(blockId:string,token:string) {
   return blocks;
 }
 
-async function findFirstCodeBlock(blockId:string,token:string,depth=0):Promise<{code:string;language:string}|null> {
-  if (depth > 6) return null;
-  const blocks = await getBlockChildren(blockId,token);
+function blockText(block:NotionBlock) {
+  const value=block[block.type] as {rich_text?:RichText[]} | undefined;
+  return (value?.rich_text ?? []).map((item)=>item.plain_text ?? '').join('').trim();
+}
+
+async function readSolutionContent(blockId:string,token:string,depth=0,inheritedSection:''|'strategy'|'retrospective'=''):Promise<{code:string;language:string;strategy:string;retrospective:string}> {
+  const result={code:'',language:'java',strategy:'',retrospective:''};
+  if (depth > 6) return result;
+  const blocks=await getBlockChildren(blockId,token);
+  let section:''|'strategy'|'retrospective'=inheritedSection;
   for (const block of blocks) {
-    if (block.type === 'code') {
-      const code = (block.code?.rich_text ?? []).map((item)=>item.plain_text ?? '').join('').trim();
-      if (code) return {code,language:block.code?.language || 'java'};
+    const text=blockText(block);
+    const heading=/^heading_[123]$/.test(block.type);
+    const normalized=text.replace(/\s/g,'');
+    if (heading && normalized.includes('전략')) { section='strategy'; continue; }
+    if (heading && (normalized.includes('후기') || normalized.includes('회고'))) { section='retrospective'; continue; }
+    if (heading) section='';
+    if (!result.code && block.type === 'code') {
+      const code=(block.code?.rich_text ?? []).map((item)=>item.plain_text ?? '').join('').trim();
+      if (code) { result.code=code; result.language=block.code?.language || 'java'; }
+    } else if (section && text) {
+      const prefix=block.type==='bulleted_list_item'?'• ':block.type==='numbered_list_item'?'– ':'';
+      result[section]+=`${result[section]?'\n':''}${prefix}${text}`;
     }
     if (block.has_children) {
-      const nested = await findFirstCodeBlock(block.id,token,depth+1);
-      if (nested) return nested;
+      const nested=await readSolutionContent(block.id,token,depth+1,section);
+      if (!result.code && nested.code) { result.code=nested.code; result.language=nested.language; }
+      if (nested.strategy) result.strategy+=`${result.strategy?'\n':''}${nested.strategy}`;
+      if (nested.retrospective) result.retrospective+=`${result.retrospective?'\n':''}${nested.retrospective}`;
     }
   }
-  return null;
+  return result;
 }
 
 function propertyText(property?:NotionProperty) {
@@ -202,12 +221,14 @@ async function getProblemDetail(problemId:string,token:string):Promise<ProblemDe
   const solutions:StudySolution[] = await Promise.all(members.map(async (member)=>{
     const solutionPage = pageByName.get(member.name.replace(/\s/g,''));
     if (solutionPage) {
-      const notionCode = await findFirstCodeBlock(solutionPage.id,token);
-      if (notionCode) {
+      const notionContent = await readSolutionContent(solutionPage.id,token);
+      if (notionContent.code) {
         return {
           member,
-          code:notionCode.code,
-          language:notionCode.language,
+          code:notionContent.code,
+          strategy:notionContent.strategy,
+          retrospective:notionContent.retrospective,
+          language:notionContent.language,
           source:'notion' as const,
           sourceUrl:solutionPage.url ?? `https://app.notion.com/p/${solutionPage.id.replace(/-/g,'')}`,
         };
@@ -219,6 +240,8 @@ async function getProblemDetail(problemId:string,token:string):Promise<ProblemDe
       return {
         member,
         code:githubCode.code,
+        strategy:'',
+        retrospective:'',
         language:githubCode.language,
         source:'github' as const,
         sourceUrl:githubCode.sourceUrl,
@@ -228,6 +251,8 @@ async function getProblemDetail(problemId:string,token:string):Promise<ProblemDe
     return {
       member,
       code:null,
+      strategy:'',
+      retrospective:'',
       language:'text',
       source:null,
       sourceUrl:solutionPage?.url ?? member.repositoryUrl,

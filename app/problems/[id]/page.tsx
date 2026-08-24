@@ -18,8 +18,6 @@ type Review = {
 
 const reviewCache=new Map<string,Review>();
 const reviewRequests=new Map<string,Promise<Review>>();
-const reviewAttempted=new Set<string>();
-const reviewErrors=new Map<string,string>();
 const REVIEW_CACHE_PREFIX='algorithm-review:v9:';
 const JAVA_KEYWORDS=new Set(['abstract','assert','boolean','break','byte','case','catch','char','class','const','continue','default','do','double','else','enum','extends','final','finally','float','for','if','implements','import','instanceof','int','interface','long','native','new','package','private','protected','public','record','return','sealed','short','static','strictfp','super','switch','synchronized','this','throw','throws','transient','try','var','void','volatile','while','yield','permits','non-sealed']);
 const JAVA_LITERALS=new Set(['true','false','null']);
@@ -212,41 +210,20 @@ export default function ProblemPage() {
         reviewRequests.set(cacheKey,pending);
       }
       setReview(await pending);
-      reviewErrors.delete(cacheKey);
       setReviewStatus('ready');
     } catch (reason) {
       const message=reason instanceof Error?reason.message:'AI 리뷰 생성에 실패했습니다.';
-      reviewErrors.set(cacheKey,message);
       setReviewStatus('error');
       setReviewError(message);
     }
   },[detail]);
 
   useEffect(()=>{
-    let cancelled=false;
-    const autoReview=async ()=>{
-      await Promise.resolve();
-      if (cancelled) return;
-      if (!selected?.code || !reviewKey) {
-        setReview(null);
-        setReviewStatus('idle');
-        setReviewError('');
-        return;
-      }
-      if (reviewAttempted.has(reviewKey)) {
-        const cached=reviewCache.get(reviewKey) ?? storedReview(reviewKey);
-        setReview(cached);
-        setReviewStatus(cached?'ready':'error');
-        setReviewError(cached?'':reviewErrors.get(reviewKey) ?? '자동 리뷰를 다시 요청하지 않았습니다.');
-        return;
-      }
-      reviewAttempted.add(reviewKey);
-      setReview(null);
-      await requestReview(selected,reviewKey);
-    };
-    void autoReview();
-    return ()=>{cancelled=true;};
-  },[requestReview,reviewKey,selected]);
+    const cached=reviewKey ? reviewCache.get(reviewKey) ?? storedReview(reviewKey) : null;
+    setReview(cached);
+    setReviewStatus(cached?'ready':'idle');
+    setReviewError('');
+  },[reviewKey]);
 
   const completed=useMemo(()=>detail?.solutions.filter((solution)=>solution.code).length ?? 0,[detail]);
 
@@ -277,10 +254,17 @@ export default function ProblemPage() {
         {selected?.code?<section className="workspace">
           <div className="codePanel">
             <div className="codeWindow">
-              <div className="panelBar"><div className="windowIdentity"><span className="codeWindowDots" aria-hidden="true"><i/><i/><i/></span><strong>{selected.member.name}</strong><span className="sourceBadge">{selected.source==='notion'?'Notion 첫 코드 블록':'GitHub 최신'}</span></div><a href={selected.sourceUrl} target="_blank" rel="noreferrer">원문 ↗</a></div>
+              <div className="panelBar"><div className="windowIdentity"><span className="codeWindowDots" aria-hidden="true"><i/><i/><i/></span><strong>{selected.member.name}</strong><span className="sourceBadge">{selected.source==='notion'?'Notion 첫 코드 블록':'GitHub 최신'}</span></div><div className="panelActions"><button className="reviewTrigger dark" type="button" disabled={reviewStatus==='loading'} onClick={()=>void requestReview(selected,reviewKey)}>{reviewStatus==='loading'?'분석 중…':review?'AI 리뷰 보기':'AI 리뷰 받기'}</button><a href={selected.sourceUrl} target="_blank" rel="noreferrer">원문 ↗</a></div></div>
               <CodeViewer solution={selected} highlights={review?.highlightLines ?? []} issues={review?.issues ?? []}/>
             </div>
           </div>
+
+          <section className="solutionNotes" aria-label="풀이 기록">
+            <article><span>01</span><div><h2>전략</h2><p>{selected.strategy || '아직 작성된 전략이 없습니다.'}</p></div></article>
+            <article><span>02</span><div><h2>후기</h2><p>{selected.retrospective || '아직 작성된 후기가 없습니다.'}</p></div></article>
+          </section>
+
+          <div className="reviewCallout"><div><strong>이 풀이를 한 번 더 점검해 볼까요?</strong><span>버튼을 누를 때만 AI 리뷰를 요청합니다.</span></div><button className="reviewTrigger" type="button" disabled={reviewStatus==='loading'} onClick={()=>void requestReview(selected,reviewKey)}>{reviewStatus==='loading'?'코드 분석 중…':review?'AI 리뷰 다시 보기':'AI 리뷰 받기'} <span>→</span></button></div>
 
           <section className="aiReview">
             <div className="reviewHeading"><div><span className="aiMark">AI</span><span><strong>코드 리뷰</strong><small>불필요한 코드 · 구현 개선 · 더 나은 알고리즘</small></span></div>{reviewStatus==='loading'?<span className="reviewLoading"><i className="syncSpinner"/> 분석 중</span>:null}</div>
@@ -295,8 +279,8 @@ export default function ProblemPage() {
               <div className="testCase"><strong>검증할 반례</strong><p>{review.testCase}</p></div>
             </div>:null}
 
-            {reviewStatus==='error'?<div className="reviewFallback"><strong>자동 리뷰를 완료하지 못했습니다.</strong><p>{reviewError}</p><button className="primaryButton" type="button" onClick={()=>selected.code&&void requestReview(selected,reviewKey)}>AI 리뷰 받기</button></div>:null}
-            {reviewStatus==='idle'?<div className="reviewFallback"><strong>리뷰할 코드가 없습니다.</strong></div>:null}
+            {reviewStatus==='error'?<div className="reviewFallback"><strong>AI 리뷰를 완료하지 못했습니다.</strong><p>{reviewError}</p><button className="primaryButton" type="button" onClick={()=>void requestReview(selected,reviewKey)}>다시 요청하기</button></div>:null}
+            {reviewStatus==='idle'?<div className="reviewFallback"><strong>아직 AI 리뷰를 요청하지 않았습니다.</strong><p>위 버튼을 누르면 현재 코드를 기준으로 AI 리뷰를 요청합니다.</p></div>:null}
           </section>
         </section>:<div className="emptyCode"><strong>{selected?.member.name}님의 첫 번째 코드 블록이 아직 없습니다.</strong><p>Notion 멤버 페이지에 코드를 추가하면 이 페이지가 30초 안에 자동으로 다시 확인합니다.</p><a href={selected?.sourceUrl} target="_blank" rel="noreferrer">작성 페이지 열기 ↗</a></div>}
       </>:null}

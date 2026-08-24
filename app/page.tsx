@@ -73,11 +73,11 @@ export default function Home() {
       <section className="homeHero">
         <div>
           <p className="eyebrow"><span className="liveDot"/> LIVE SYNC</p>
-          <h1>문제를 골라주세요.<br/>풀이 공간으로 이동합니다.</h1>
+          <h1>문제를 선택해주세요.<br/>워크스페이스로 이동합니다.</h1>
         </div>
         <aside className="sourcePanel">
-          <div><Image src="/notion-mark.png" width={42} height={42} alt="Notion"/><span><strong>Notion</strong><small>문제 · 멤버 · 첫 코드 블록</small></span></div>
-          <div><Image src="/github-mark.png" width={42} height={42} alt="GitHub"/><span><strong>GitHub</strong><small>Notion 코드가 없을 때 조회</small></span></div>
+          <div><a className="sourceIconLink" href="https://app.notion.com/p/3c5a717ec99e80e3b24df528768d2ce1" target="_blank" rel="noreferrer" aria-label="SSAFY ALGO Notion 열기"><Image src="/notion-mark.png" width={42} height={42} alt=""/></a><span><strong>Notion</strong><small>문제 · 멤버 · 첫 코드 블록</small></span></div>
+          <div><a className="sourceIconLink" href="https://github.com/ssafy-16th-algorithm" target="_blank" rel="noreferrer" aria-label="SSAFY ALGO GitHub 열기"><Image src="/github-mark.png" width={42} height={42} alt=""/></a><span><strong>GitHub</strong><small>Notion 코드가 없을 때 조회</small></span></div>
         </aside>
       </section>
 
