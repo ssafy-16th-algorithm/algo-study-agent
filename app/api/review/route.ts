@@ -37,13 +37,44 @@ async function sha256(value:string) {
   return Array.from(new Uint8Array(digest)).map((part)=>part.toString(16).padStart(2,'0')).join('');
 }
 
-function validReview(value:unknown):value is Review {
-  if (!value || typeof value !== 'object') return false;
-  const review = value as Partial<Review>;
-  return typeof review.verdict === 'string' && typeof review.complexity === 'string'
-    && Array.isArray(review.issues) && review.issues.length > 0
-    && Boolean(review.betterApproach) && typeof review.testCase === 'string'
-    && Array.isArray(review.highlightLines);
+function normalizeReview(value:unknown):Review|null {
+  if (!value || typeof value !== 'object') return null;
+  const container=value as Record<string,unknown>;
+  const raw=(container.review && typeof container.review === 'object' ? container.review : container) as Record<string,unknown>;
+  const allowedKinds=new Set<ReviewIssue['kind']>(['삭제 후보','개선','오류 위험','알고리즘']);
+  const issues=(Array.isArray(raw.issues)?raw.issues:[]).flatMap((item):ReviewIssue[]=>{
+    if (!item || typeof item !== 'object') return [];
+    const issue=item as Record<string,unknown>;
+    const title=typeof issue.title==='string'&&issue.title.trim()?issue.title.trim():'';
+    const suggestion=typeof issue.suggestion==='string'&&issue.suggestion.trim()?issue.suggestion.trim():'';
+    if (!title && !suggestion) return [];
+    const rawKind=typeof issue.kind==='string'?issue.kind:'개선';
+    const line=Math.max(1,Math.round(Number(issue.line)||1));
+    return [{
+      kind:allowedKinds.has(rawKind as ReviewIssue['kind'])?rawKind as ReviewIssue['kind']:'개선',
+      title:title||'구현 개선',
+      evidence:typeof issue.evidence==='string'&&issue.evidence.trim()?issue.evidence.trim():`${line}번 줄을 확인하세요.`,
+      impact:typeof issue.impact==='string'&&issue.impact.trim()?issue.impact.trim():'가독성 또는 안정성에 영향을 줄 수 있습니다.',
+      suggestion:suggestion||'해당 로직을 단순화하세요.',
+      line,
+    }];
+  }).slice(0,3);
+  if (!issues.length) return null;
+  const rawApproach=raw.betterApproach&&typeof raw.betterApproach==='object' ? raw.betterApproach as Record<string,unknown> : {};
+  const rawSteps=Array.isArray(rawApproach.steps)?rawApproach.steps.filter((step):step is string=>typeof step==='string'&&Boolean(step.trim())).map((step)=>step.trim()):[];
+  const rawHighlights=Array.isArray(raw.highlightLines)?raw.highlightLines.map(Number).filter((line)=>Number.isFinite(line)&&line>0).map(Math.round):[];
+  return {
+    verdict:typeof raw.verdict==='string'&&raw.verdict.trim()?raw.verdict.trim():`${issues[0].title}: ${issues[0].suggestion}`,
+    complexity:typeof raw.complexity==='string'&&raw.complexity.trim()?raw.complexity.trim():'코드 흐름 기준으로 복잡도를 다시 확인하세요.',
+    issues,
+    betterApproach:{
+      title:typeof rawApproach.title==='string'&&rawApproach.title.trim()?rawApproach.title.trim():'핵심 개선 순서',
+      steps:(rawSteps.length?rawSteps:issues.map((issue)=>issue.suggestion)).slice(0,3),
+      complexity:typeof rawApproach.complexity==='string'&&rawApproach.complexity.trim()?rawApproach.complexity.trim():'불필요한 연산과 상태를 줄이는 방향입니다.',
+    },
+    testCase:typeof raw.testCase==='string'&&raw.testCase.trim()?raw.testCase.trim():'최소 입력과 경계값을 직접 검증하세요.',
+    highlightLines:Array.from(new Set(rawHighlights.length?rawHighlights:issues.map((issue)=>issue.line))).slice(0,5),
+  };
 }
 
 export async function POST(request:Request) {
@@ -65,7 +96,7 @@ export async function POST(request:Request) {
     return NextResponse.json({error:'리뷰할 코드가 없거나 너무 깁니다.'},{status:400});
   }
 
-  const key = await sha256(JSON.stringify({version:8,problem:input.problem,language:input.language,code}));
+  const key = await sha256(JSON.stringify({version:9,problem:input.problem,language:input.language,code}));
   const cacheUrl = new URL(`https://algorithm-review-cache.internal/${key}`);
   const workerCache = typeof globalThis.caches === 'undefined'
     ? undefined
@@ -138,10 +169,11 @@ export async function POST(request:Request) {
   }
 
   const payload = await response.json() as Record<string,unknown>;
-  let review:unknown;
-  try { review = parseReviewText(outputText(payload)); }
+  let parsed:unknown;
+  try { parsed = parseReviewText(outputText(payload)); }
   catch { return NextResponse.json({error:'AI 응답을 읽지 못했습니다.'},{status:502}); }
-  if (!validReview(review)) return NextResponse.json({error:'AI 리뷰 형식이 올바르지 않습니다.'},{status:502});
+  const review=normalizeReview(parsed);
+  if (!review) return NextResponse.json({error:'AI 리뷰 내용을 생성하지 못했습니다. 다시 시도해 주세요.'},{status:502});
   if (review.verdict === '최우선 수정 1문장') review.verdict = `${review.issues[0].title}: ${review.issues[0].suggestion}`;
   if (review.betterApproach.title === '접근 이름') review.betterApproach.title = '핵심 개선 순서';
   if (review.betterApproach.steps.some((step)=>/^단계\d+$/.test(step))) {

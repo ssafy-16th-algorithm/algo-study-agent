@@ -18,7 +18,7 @@ type Review = {
 
 const reviewCache=new Map<string,Review>();
 const reviewRequests=new Map<string,Promise<Review>>();
-const REVIEW_CACHE_PREFIX='algorithm-review:v8:';
+const REVIEW_CACHE_PREFIX='algorithm-review:v9:';
 const JAVA_KEYWORDS=new Set(['abstract','assert','boolean','break','byte','case','catch','char','class','const','continue','default','do','double','else','enum','extends','final','finally','float','for','if','implements','import','instanceof','int','interface','long','native','new','package','private','protected','public','record','return','sealed','short','static','strictfp','super','switch','synchronized','this','throw','throws','transient','try','var','void','volatile','while','yield','permits','non-sealed']);
 const JAVA_LITERALS=new Set(['true','false','null']);
 const JAVA_TYPES=new Set(['String','Object','Integer','Long','Double','Float','Boolean','Character','Byte','Short','Math','System','Arrays','Collections','List','ArrayList','LinkedList','Map','HashMap','Set','HashSet','Queue','Deque','ArrayDeque','PriorityQueue','Stack','StringBuilder','Scanner','BufferedReader','InputStreamReader','StringTokenizer','IOException']);
