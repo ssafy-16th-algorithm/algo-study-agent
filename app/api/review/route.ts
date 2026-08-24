@@ -111,7 +111,7 @@ export async function POST(request:Request) {
   const apiBaseUrl = (process.env.LLM_BASE_URL || 'https://api.groq.com/openai/v1').replace(/\/$/,'');
   const reviewRequest = {
       model:process.env.LLM_REVIEW_MODEL || 'groq/compound',
-      max_completion_tokens:1000,
+      max_completion_tokens:512,
       tool_choice:'none',
       citation_options:'disabled',
       messages:[{
@@ -148,7 +148,7 @@ export async function POST(request:Request) {
     response = await callGroq(reviewRequest);
     if (response.status === 413 && reviewRequest.model === 'groq/compound') {
       console.warn('Groq Compound request too large; retrying with direct model');
-      const fallbackRequest={...reviewRequest,model:'openai/gpt-oss-20b',max_completion_tokens:1200,reasoning_effort:'low'};
+      const fallbackRequest={...reviewRequest,model:'openai/gpt-oss-20b',max_completion_tokens:512,reasoning_effort:'low'};
       response = await callGroq(fallbackRequest);
       if (response.status === 400) {
         console.warn('Groq JSON mode rejected; retrying with prompt-only JSON');

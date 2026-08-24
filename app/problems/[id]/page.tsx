@@ -18,6 +18,8 @@ type Review = {
 
 const reviewCache=new Map<string,Review>();
 const reviewRequests=new Map<string,Promise<Review>>();
+const reviewAttempted=new Set<string>();
+const reviewErrors=new Map<string,string>();
 const REVIEW_CACHE_PREFIX='algorithm-review:v9:';
 const JAVA_KEYWORDS=new Set(['abstract','assert','boolean','break','byte','case','catch','char','class','const','continue','default','do','double','else','enum','extends','final','finally','float','for','if','implements','import','instanceof','int','interface','long','native','new','package','private','protected','public','record','return','sealed','short','static','strictfp','super','switch','synchronized','this','throw','throws','transient','try','var','void','volatile','while','yield','permits','non-sealed']);
 const JAVA_LITERALS=new Set(['true','false','null']);
@@ -210,10 +212,13 @@ export default function ProblemPage() {
         reviewRequests.set(cacheKey,pending);
       }
       setReview(await pending);
+      reviewErrors.delete(cacheKey);
       setReviewStatus('ready');
     } catch (reason) {
+      const message=reason instanceof Error?reason.message:'AI 리뷰 생성에 실패했습니다.';
+      reviewErrors.set(cacheKey,message);
       setReviewStatus('error');
-      setReviewError(reason instanceof Error?reason.message:'AI 리뷰 생성에 실패했습니다.');
+      setReviewError(message);
     }
   },[detail]);
 
@@ -222,12 +227,21 @@ export default function ProblemPage() {
     const autoReview=async ()=>{
       await Promise.resolve();
       if (cancelled) return;
-      setReview(null);
       if (!selected?.code || !reviewKey) {
+        setReview(null);
         setReviewStatus('idle');
         setReviewError('');
         return;
       }
+      if (reviewAttempted.has(reviewKey)) {
+        const cached=reviewCache.get(reviewKey) ?? storedReview(reviewKey);
+        setReview(cached);
+        setReviewStatus(cached?'ready':'error');
+        setReviewError(cached?'':reviewErrors.get(reviewKey) ?? '자동 리뷰를 다시 요청하지 않았습니다.');
+        return;
+      }
+      reviewAttempted.add(reviewKey);
+      setReview(null);
       await requestReview(selected,reviewKey);
     };
     void autoReview();
