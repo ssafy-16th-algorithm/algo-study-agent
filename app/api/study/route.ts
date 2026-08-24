@@ -4,6 +4,22 @@ import { members, type Member, type ProblemDetail, type StudyProblem, type Study
 const NOTION_VERSION = '2025-09-03';
 const DEFAULT_PROBLEM_SOURCE = '2dca717ec99e82a2ae1687ec3d44366a';
 const githubTreeCache = new Map<string,Promise<string[]>>();
+const STUDY_CACHE_TTL_MS = 60_000;
+const studyCache = new Map<string,{expiresAt:number;value:unknown}>();
+const studyRequests = new Map<string,Promise<unknown>>();
+
+async function cachedStudy<T>(key:string,loader:()=>Promise<T>,refresh=false):Promise<T> {
+  const cached = studyCache.get(key);
+  if (!refresh && cached && cached.expiresAt > Date.now()) return cached.value as T;
+  const pending = studyRequests.get(key);
+  if (pending) return pending as Promise<T>;
+  const request = loader().then((value)=>{
+    studyCache.set(key,{value,expiresAt:Date.now()+STUDY_CACHE_TTL_MS});
+    return value;
+  }).finally(()=>studyRequests.delete(key));
+  studyRequests.set(key,request);
+  return request;
+}
 
 type RichText = { plain_text?:string };
 type NotionProperty = {
@@ -221,6 +237,16 @@ async function getProblemDetail(problemId:string,token:string):Promise<ProblemDe
   return {problem,solutions,syncedAt:new Date().toISOString()};
 }
 
+async function getProblems(sourceId:string,token:string,refresh=false) {
+  return cachedStudy(`problems:${sourceId}`,async ()=>{
+    const pages = await queryDataSource(sourceId,token);
+    const problems = pages.map(readProblem)
+      .filter((problem)=>problem.week > 0)
+      .sort((a,b)=>a.week-b.week || a.date.localeCompare(b.date) || a.title.localeCompare(b.title,'ko'));
+    return {problems,syncedAt:new Date().toISOString()};
+  },refresh);
+}
+
 export async function GET(request:Request) {
   const token = process.env.NOTION_TOKEN;
   if (!token) {
@@ -230,20 +256,34 @@ export async function GET(request:Request) {
     );
   }
 
-  const problemId = new URL(request.url).searchParams.get('problemId')?.replace(/-/g,'').toLowerCase();
+  const searchParams = new URL(request.url).searchParams;
+  const problemId = searchParams.get('problemId')?.replace(/-/g,'').toLowerCase();
+  const progressWeek = Number(searchParams.get('progressWeek') ?? 0);
+  const refresh = searchParams.get('refresh') === '1';
+  const cacheHeaders = {'Cache-Control':'private, max-age=30, stale-while-revalidate=60'};
   try {
     if (problemId) {
       if (!/^[0-9a-f]{32}$/.test(problemId)) return NextResponse.json({error:'잘못된 문제 ID입니다.'},{status:400});
-      const detail = await getProblemDetail(problemId,token);
-      return NextResponse.json(detail,{headers:{'Cache-Control':'no-store'}});
+      const detail = await cachedStudy(`problem:${problemId}`,()=>getProblemDetail(problemId,token),refresh);
+      return NextResponse.json(detail,{headers:cacheHeaders});
     }
 
     const sourceId = (process.env.NOTION_PROBLEMS_DATA_SOURCE_ID || DEFAULT_PROBLEM_SOURCE).replace(/-/g,'');
-    const pages = await queryDataSource(sourceId,token);
-    const problems = pages.map(readProblem)
-      .filter((problem)=>problem.week > 0)
-      .sort((a,b)=>a.week-b.week || a.date.localeCompare(b.date) || a.title.localeCompare(b.title,'ko'));
-    return NextResponse.json({problems,syncedAt:new Date().toISOString()},{headers:{'Cache-Control':'no-store'}});
+    const data = await getProblems(sourceId,token,refresh);
+    if (Number.isInteger(progressWeek) && progressWeek > 0) {
+      const weekProblems=data.problems.filter((problem)=>problem.week===progressWeek);
+      const details=await Promise.all(weekProblems.map((problem)=>cachedStudy(
+        `problem:${problem.id}`,
+        ()=>getProblemDetail(problem.id,token),
+        refresh,
+      )));
+      const progress=members.map((member)=>{
+        const completed=details.filter((detail)=>detail.solutions.some((solution)=>solution.member.id===member.id && Boolean(solution.code))).length;
+        return {member,completed,total:weekProblems.length,percent:weekProblems.length?Math.round(completed/weekProblems.length*100):0};
+      });
+      return NextResponse.json({week:progressWeek,progress,syncedAt:new Date().toISOString()},{headers:cacheHeaders});
+    }
+    return NextResponse.json(data,{headers:cacheHeaders});
   } catch (error) {
     console.error('Study sync failed',error);
     return NextResponse.json(

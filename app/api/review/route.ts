@@ -14,17 +14,22 @@ type Review = {
 const requestWindows = new Map<string,{count:number;resetAt:number}>();
 
 function outputText(payload:Record<string,unknown>) {
-  if (typeof payload.output_text === 'string') return payload.output_text;
-  for (const item of Array.isArray(payload.output) ? payload.output : []) {
-    if (!item || typeof item !== 'object') continue;
-    const content = Array.isArray((item as {content?:unknown[]}).content) ? (item as {content:unknown[]}).content : [];
-    for (const block of content) {
-      if (block && typeof block === 'object' && (block as {type?:string}).type === 'output_text' && typeof (block as {text?:unknown}).text === 'string') {
-        return (block as {text:string}).text;
-      }
-    }
+  const choices = Array.isArray(payload.choices) ? payload.choices : [];
+  const message = choices[0] && typeof choices[0] === 'object'
+    ? (choices[0] as {message?:{content?:unknown}}).message
+    : undefined;
+  return typeof message?.content === 'string' ? message.content : '';
+}
+
+function parseReviewText(text:string) {
+  const normalized = text.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'');
+  try { return JSON.parse(normalized) as unknown; }
+  catch {
+    const start=normalized.indexOf('{');
+    const end=normalized.lastIndexOf('}');
+    if(start<0 || end<=start) throw new Error('JSON object not found');
+    return JSON.parse(normalized.slice(start,end+1)) as unknown;
   }
-  return '';
 }
 
 async function sha256(value:string) {
@@ -42,7 +47,7 @@ function validReview(value:unknown):value is Review {
 }
 
 export async function POST(request:Request) {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.LLM_API_KEY;
   if (!apiKey) return NextResponse.json({error:'AI 리뷰 API 키가 연결되지 않았습니다.',code:'AI_NOT_CONFIGURED'},{status:503});
 
   const clientId = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'anonymous';
@@ -60,85 +65,80 @@ export async function POST(request:Request) {
     return NextResponse.json({error:'리뷰할 코드가 없거나 너무 깁니다.'},{status:400});
   }
 
-  const key = await sha256(JSON.stringify({version:4,problem:input.problem,language:input.language,code}));
+  const key = await sha256(JSON.stringify({version:8,problem:input.problem,language:input.language,code}));
   const cacheUrl = new URL(`https://algorithm-review-cache.internal/${key}`);
   const workerCache = (globalThis.caches as CacheStorage & {default?:Cache}).default;
   const cached = workerCache ? await workerCache.match(cacheUrl) : undefined;
-  if (cached) return cached;
+  if (cached) return new NextResponse(cached.body,{
+    status:cached.status,
+    statusText:cached.statusText,
+    headers:new Headers(cached.headers),
+  });
 
-  const response = await fetch('https://api.openai.com/v1/responses',{
-    method:'POST',
-    headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},
-    body:JSON.stringify({
-      model:process.env.OPENAI_REVIEW_MODEL || 'gpt-5',
-      store:false,
-      max_output_tokens:1800,
-      instructions:[
-        '당신은 기업 코딩테스트와 삼성 SW 역량테스트를 10년 이상 지도한 알고리즘 멘토다.',
-        '칭찬과 추상적 총평은 최소화하고, 삭제 가능한 불필요한 코드, 중복 상태·분기·자료구조, 개선 가능한 구현, 더 적절한 알고리즘을 우선 제시한다.',
-        '모든 지적은 실제 줄 번호와 코드 근거를 포함한다. 근거가 없으면 문제라고 단정하지 않는다.',
-        '각 항목에 현재 영향과 바로 적용할 구체적인 수정 방법을 쓴다.',
-        '더 나은 알고리즘이 없다면 억지로 제안하지 말고 같은 알고리즘 안에서 단순화·복잡도·안전성을 개선한다.',
-        '초보자도 이해하도록 한국어로 설명하되 시간·공간 복잡도는 정확히 표기한다.',
-        '최소 2개, 최대 5개의 핵심 개선 항목만 선정한다.',
-      ].join(' '),
-      input:[
+  const apiBaseUrl = (process.env.LLM_BASE_URL || 'https://api.groq.com/openai/v1').replace(/\/$/,'');
+  const reviewRequest = {
+      model:process.env.LLM_REVIEW_MODEL || 'groq/compound',
+      max_completion_tokens:1000,
+      tool_choice:'none',
+      citation_options:'disabled',
+      messages:[{
+        role:'system',
+        content:[
+          '코딩테스트 코드 리뷰어다. 한국어로 짧고 구체적으로 답한다.',
+          '칭찬·서론·반복은 쓰지 않는다. 실제 코드 근거가 있는 핵심 문제 2~3개만 고른다.',
+          '우선순위는 오류 위험, 복잡도, 불필요한 코드, 구현 단순화 순이다.',
+          '각 문장은 80자 이내로 쓰고 전체 응답은 간결하게 유지한다.',
+        ].join(' '),
+      },{
+        role:'user',
+        content:[
         `문제: ${input.problem.title}`,
         `문제 링크: ${input.problem.externalUrl ?? '없음'}`,
         `작성자: ${input.member ?? '스터디원'} / 언어: ${input.language ?? 'unknown'}`,
         '코드:',
         code,
-      ].join('\n'),
-      text:{
-        verbosity:'medium',
-        format:{
-          type:'json_schema',
-          name:'algorithm_improvement_review',
-          strict:true,
-          schema:{
-            type:'object',
-            additionalProperties:false,
-            properties:{
-              verdict:{type:'string'},
-              complexity:{type:'string'},
-              issues:{
-                type:'array',minItems:2,maxItems:5,
-                items:{
-                  type:'object',additionalProperties:false,
-                  properties:{
-                    kind:{type:'string',enum:['삭제 후보','개선','오류 위험','알고리즘']},
-                    title:{type:'string'},evidence:{type:'string'},impact:{type:'string'},suggestion:{type:'string'},
-                    line:{type:'integer',minimum:1},
-                  },
-                  required:['kind','title','evidence','impact','suggestion','line'],
-                },
-              },
-              betterApproach:{
-                type:'object',additionalProperties:false,
-                properties:{title:{type:'string'},steps:{type:'array',minItems:2,maxItems:5,items:{type:'string'}},complexity:{type:'string'}},
-                required:['title','steps','complexity'],
-              },
-              testCase:{type:'string'},
-              highlightLines:{type:'array',minItems:1,maxItems:5,items:{type:'integer',minimum:1}},
-            },
-            required:['verdict','complexity','issues','betterApproach','testCase','highlightLines'],
-          },
-        },
-      },
-    }),
+          'JSON만 출력:',
+          '{"verdict":"최우선 수정 1문장","complexity":"현재 시간/공간 복잡도","issues":[{"kind":"삭제 후보|개선|오류 위험|알고리즘","title":"짧은 제목","evidence":"코드 근거","impact":"영향","suggestion":"수정법","line":1}],"betterApproach":{"title":"접근 이름","steps":["단계1","단계2"],"complexity":"개선 복잡도"},"testCase":"반례 1개","highlightLines":[1]}',
+          '위 JSON의 문구는 구조 설명용이다. 모든 값은 제공된 코드를 실제 분석해 작성하고 예시 문구를 그대로 복사하지 않는다.',
+          'issues는 2~3개, steps는 2~3개로 제한한다.',
+        ].join('\n'),
+      }],
+      response_format:{type:'json_object'},
+    };
+  const callGroq = (body:Record<string,unknown>) => fetch(`${apiBaseUrl}/chat/completions`,{
+    method:'POST',
+    headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},
+    body:JSON.stringify(body),
   });
+  let response = await callGroq(reviewRequest);
+  if (response.status === 413 && reviewRequest.model === 'groq/compound') {
+    console.warn('Groq Compound request too large; retrying with direct model');
+    const fallbackRequest={...reviewRequest,model:'openai/gpt-oss-20b',max_completion_tokens:1200,reasoning_effort:'low'};
+    response = await callGroq(fallbackRequest);
+    if (response.status === 400) {
+      console.warn('Groq JSON mode rejected; retrying with prompt-only JSON');
+      response = await callGroq({...fallbackRequest,response_format:undefined});
+    }
+  }
 
   if (!response.ok) {
     const detail = await response.text();
-    console.error('OpenAI review failed',response.status,detail.slice(0,300));
-    return NextResponse.json({error:'AI 리뷰 생성에 실패했습니다.'},{status:502});
+    console.error('AI review failed',response.status,detail.slice(0,300));
+    if (response.status === 429) return NextResponse.json({error:'AI 사용량 제한입니다. 잠시 후 다시 시도해 주세요.'},{status:429});
+    if (response.status === 413) return NextResponse.json({error:'리뷰 요청이 너무 큽니다. 더 짧은 코드로 다시 시도해 주세요.'},{status:413});
+    return NextResponse.json({error:'코드 리뷰 생성에 실패했습니다.'},{status:502});
   }
 
   const payload = await response.json() as Record<string,unknown>;
   let review:unknown;
-  try { review = JSON.parse(outputText(payload)); }
+  try { review = parseReviewText(outputText(payload)); }
   catch { return NextResponse.json({error:'AI 응답을 읽지 못했습니다.'},{status:502}); }
   if (!validReview(review)) return NextResponse.json({error:'AI 리뷰 형식이 올바르지 않습니다.'},{status:502});
+  if (review.verdict === '최우선 수정 1문장') review.verdict = `${review.issues[0].title}: ${review.issues[0].suggestion}`;
+  if (review.betterApproach.title === '접근 이름') review.betterApproach.title = '핵심 개선 순서';
+  if (review.betterApproach.steps.some((step)=>/^단계\d+$/.test(step))) {
+    review.betterApproach.steps = review.issues.map((issue)=>issue.suggestion).slice(0,3);
+  }
 
   const result = NextResponse.json({review});
   result.headers.set('Cache-Control','public, max-age=31536000, immutable');

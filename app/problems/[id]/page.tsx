@@ -17,15 +17,103 @@ type Review = {
 };
 
 const reviewCache=new Map<string,Review>();
+const reviewRequests=new Map<string,Promise<Review>>();
+const REVIEW_CACHE_PREFIX='algorithm-review:v8:';
+const JAVA_KEYWORDS=new Set(['abstract','assert','boolean','break','byte','case','catch','char','class','const','continue','default','do','double','else','enum','extends','final','finally','float','for','if','implements','import','instanceof','int','interface','long','native','new','package','private','protected','public','record','return','sealed','short','static','strictfp','super','switch','synchronized','this','throw','throws','transient','try','var','void','volatile','while','yield','permits','non-sealed']);
+const JAVA_LITERALS=new Set(['true','false','null']);
+const JAVA_TYPES=new Set(['String','Object','Integer','Long','Double','Float','Boolean','Character','Byte','Short','Math','System','Arrays','Collections','List','ArrayList','LinkedList','Map','HashMap','Set','HashSet','Queue','Deque','ArrayDeque','PriorityQueue','Stack','StringBuilder','Scanner','BufferedReader','InputStreamReader','StringTokenizer','IOException']);
+type CodeToken={text:string;kind?:'keyword'|'literal'|'type'|'string'|'number'|'comment'|'annotation'|'operator'};
 
-function CodeViewer({solution,highlights}:{solution:StudySolution;highlights:number[]}) {
-  const lines=(solution.code ?? '').replace(/\r\n/g,'\n').split('\n');
+function highlightJava(code:string) {
+  let inBlockComment=false;
+  return code.replace(/\r\n/g,'\n').split('\n').map((line)=>{
+    const tokens:CodeToken[]=[];
+    let index=0;
+    const push=(text:string,kind?:CodeToken['kind'])=>tokens.push({text,kind});
+    while(index<line.length) {
+      if(inBlockComment) {
+        const end=line.indexOf('*/',index);
+        if(end<0) { push(line.slice(index),'comment'); break; }
+        push(line.slice(index,end+2),'comment'); index=end+2; inBlockComment=false; continue;
+      }
+      if(line.startsWith('//',index)) { push(line.slice(index),'comment'); break; }
+      if(line.startsWith('/*',index)) {
+        const end=line.indexOf('*/',index+2);
+        if(end<0) { push(line.slice(index),'comment'); inBlockComment=true; break; }
+        push(line.slice(index,end+2),'comment'); index=end+2; continue;
+      }
+      const char=line[index];
+      if(char==='"' || char==="'") {
+        const quote=char; let end=index+1;
+        while(end<line.length) {
+          if(line[end]==='\\') { end+=2; continue; }
+          const current=line[end++];
+          if(current===quote) break;
+        }
+        push(line.slice(index,end),'string'); index=end; continue;
+      }
+      const rest=line.slice(index);
+      const annotation=rest.match(/^@[A-Za-z_$][\w$]*/)?.[0];
+      if(annotation) { push(annotation,'annotation'); index+=annotation.length; continue; }
+      const number=rest.match(/^(?:0[xX][\dA-Fa-f_]+|0[bB][01_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][+-]?\d[\d_]*)?)[fFdDlL]?/)?.[0];
+      if(number) { push(number,'number'); index+=number.length; continue; }
+      const operator=rest.match(/^(?:->|::|>>>?=?|<<=?|==|!=|<=|>=|&&|\|\||\+\+|--|[+\-*%=&|^!<>?:~]=?)/)?.[0];
+      if(operator) { push(operator,'operator'); index+=operator.length; continue; }
+      const word=rest.match(/^[A-Za-z_$][\w$]*/)?.[0];
+      if(word) {
+        const kind=JAVA_KEYWORDS.has(word)?'keyword':JAVA_LITERALS.has(word)?'literal':JAVA_TYPES.has(word)||/^[A-Z]/.test(word)?'type':undefined;
+        push(word,kind); index+=word.length; continue;
+      }
+      const plain=rest.match(/^[^A-Za-z_$@'"/\d]+/)?.[0] ?? char;
+      push(plain); index+=plain.length;
+    }
+    return tokens;
+  });
+}
+
+function shortHash(value:string) {
+  let hash=2166136261;
+  for (let index=0;index<value.length;index++) hash=Math.imul(hash^value.charCodeAt(index),16777619);
+  return (hash>>>0).toString(36);
+}
+
+function storedReview(key:string) {
+  try {
+    const value=window.localStorage.getItem(REVIEW_CACHE_PREFIX+key);
+    return value?JSON.parse(value) as Review:null;
+  } catch { return null; }
+}
+
+function storeReview(key:string,review:Review) {
+  try { window.localStorage.setItem(REVIEW_CACHE_PREFIX+key,JSON.stringify(review)); }
+  catch { /* 메모리 캐시는 계속 사용한다. */ }
+}
+
+function CodeViewer({solution,highlights,issues}:{solution:StudySolution;highlights:number[];issues:ReviewIssue[]}) {
+  const lines=highlightJava(solution.code ?? '');
   const marked=new Set(highlights);
+  const [activeLine,setActiveLine]=useState<number|null>(null);
+  const issuesByLine=new Map<number,ReviewIssue[]>();
+  issues.forEach((issue)=>issuesByLine.set(issue.line,[...(issuesByLine.get(issue.line) ?? []),issue]));
   return <pre className="wideCode" tabIndex={0} aria-label="전체 풀이 코드">
-    <code>{lines.map((line,index)=><span className={`codeLine ${marked.has(index+1)?'reviewed':''}`} key={index}>
-      <span className="lineNumber">{index+1}</span><span className="lineText">{line || ' '}</span>
-      {marked.has(index+1)?<span className="lineReviewMark">리뷰</span>:null}
-    </span>)}</code>
+    <code>{lines.map((line,index)=>{
+      const lineNumber=index+1;
+      const lineIssues=issuesByLine.get(lineNumber) ?? [];
+      const isOpen=activeLine===lineNumber;
+      return <span className={`codeLine ${marked.has(lineNumber)?'reviewed':''} ${isOpen?'reviewOpen':''}`} key={index}>
+        <span className="lineNumber">{lineNumber}</span><span className="lineText">{line.length?line.map((token,tokenIndex)=><span className={token.kind?`tok-${token.kind}`:undefined} key={tokenIndex}>{token.text}</span>):' '}</span>
+        {lineIssues.length?<span className="lineReviewAnchor">
+          <button className="lineReviewMark" type="button" aria-expanded={isOpen} aria-label={`${lineNumber}번 줄 리뷰 보기`} onClick={()=>setActiveLine(isOpen?null:lineNumber)}><span>✦</span> 리뷰</button>
+          {isOpen?<span className="lineReviewBubble" role="note">
+            {lineIssues.map((issue,issueIndex)=><span className="bubbleIssue" key={`${issue.title}-${issueIndex}`}>
+              <span className="bubbleMeta"><em>{issue.kind}</em><small>LINE {issue.line}</small></span>
+              <strong>{issue.title}</strong>
+              <span>{issue.suggestion}</span>
+            </span>)}
+          </span>:null}
+        </span>:null}
+      </span>;
+    })}</code>
   </pre>;
 }
 
@@ -40,11 +128,13 @@ export default function ProblemPage() {
   const [reviewStatus,setReviewStatus]=useState<'idle'|'loading'|'ready'|'error'>('idle');
   const [reviewError,setReviewError]=useState('');
 
-  const sync=useCallback(async (silent=false)=>{
+  const sync=useCallback(async (silent=false,refresh=false)=>{
     await Promise.resolve();
     if (!silent) setLoading(true);
     try {
-      const response=await fetch(`/api/study?problemId=${encodeURIComponent(problemId)}`,{cache:'no-store'});
+      const query=new URLSearchParams({problemId});
+      if (refresh) query.set('refresh','1');
+      const response=await fetch(`/api/study?${query}`,{cache:refresh?'no-store':'default'});
       const body=await response.json() as ProblemDetail & {error?:string};
       if (!response.ok) throw new Error(body.error || '문제 동기화에 실패했습니다.');
       setDetail(body);
@@ -63,37 +153,45 @@ export default function ProblemPage() {
     const frame=requestAnimationFrame(()=>void sync());
     const timer=window.setInterval(()=>{
       if (document.visibilityState==='visible') void sync(true);
-    },30000);
+    },60000);
     return ()=>{cancelAnimationFrame(frame);window.clearInterval(timer);};
   },[sync]);
 
   const selected=detail?.solutions.find((solution)=>solution.member.id===selectedMemberId) ?? null;
-  const reviewKey=selected?.code ? `${detail?.problem.id}:${selected.member.id}:${selected.code}` : '';
+  const reviewKey=selected?.code ? shortHash(`${detail?.problem.id}:${selected.member.id}:${selected.code}`) : '';
 
   const requestReview=useCallback(async (solution:StudySolution,cacheKey:string)=>{
     setReviewStatus('loading');
     setReviewError('');
     try {
-      const cached=reviewCache.get(cacheKey);
+      const cached=reviewCache.get(cacheKey) ?? storedReview(cacheKey);
       if (cached) {
         setReview(cached);
         setReviewStatus('ready');
         return;
       }
-      const response=await fetch('/api/review',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          problem:{title:detail?.problem.title,externalUrl:detail?.problem.externalUrl},
-          member:solution.member.name,
-          language:solution.language,
-          code:solution.code,
-        }),
-      });
-      const body=await response.json() as {review?:Review;error?:string};
-      if (!response.ok || !body.review) throw new Error(body.error || 'AI 리뷰 생성에 실패했습니다.');
-      reviewCache.set(cacheKey,body.review);
-      setReview(body.review);
+      let pending=reviewRequests.get(cacheKey);
+      if (!pending) {
+        pending=(async ()=>{
+          const response=await fetch('/api/review',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({
+              problem:{title:detail?.problem.title,externalUrl:detail?.problem.externalUrl},
+              member:solution.member.name,
+              language:solution.language,
+              code:solution.code,
+            }),
+          });
+          const body=await response.json() as {review?:Review;error?:string};
+          if (!response.ok || !body.review) throw new Error(body.error || 'AI 리뷰 생성에 실패했습니다.');
+          reviewCache.set(cacheKey,body.review);
+          storeReview(cacheKey,body.review);
+          return body.review;
+        })().finally(()=>reviewRequests.delete(cacheKey));
+        reviewRequests.set(cacheKey,pending);
+      }
+      setReview(await pending);
       setReviewStatus('ready');
     } catch (reason) {
       setReviewStatus('error');
@@ -123,10 +221,10 @@ export default function ProblemPage() {
   return <div className="appShell">
     <SiteHeader/>
     <main className="detailMain">
-      <div className="detailTopline"><Link href="/">← 문제 목록</Link><button type="button" className="textButton" onClick={()=>void sync()} disabled={loading}>{loading?'동기화 중…':'지금 동기화'}</button></div>
+      <div className="detailTopline"><Link href="/">← 문제 목록</Link><button type="button" className="textButton" onClick={()=>void sync(false,true)} disabled={loading}>{loading?'동기화 중…':'지금 동기화'}</button></div>
 
       {loading && !detail?<div className="loadingPanel"><span className="syncSpinner"/><strong>Notion 문제 템플릿을 읽는 중입니다.</strong></div>:null}
-      {syncError?<div className="errorPanel"><strong>실시간 동기화에 실패했습니다.</strong><p>{syncError}</p><button type="button" onClick={()=>void sync()}>다시 시도</button></div>:null}
+      {syncError?<div className="errorPanel"><strong>실시간 동기화에 실패했습니다.</strong><p>{syncError}</p><button type="button" onClick={()=>void sync(false,true)}>다시 시도</button></div>:null}
 
       {detail?<>
         <header className="problemHero">
@@ -146,12 +244,14 @@ export default function ProblemPage() {
 
         {selected?.code?<section className="workspace">
           <div className="codePanel">
-            <div className="panelBar"><div><span className="statusDot done"/><strong>{selected.member.name} · {selected.language}</strong><span className="sourceBadge">{selected.source==='notion'?'Notion 첫 코드 블록':'GitHub 최신'}</span></div><a href={selected.sourceUrl} target="_blank" rel="noreferrer">원문 ↗</a></div>
-            <CodeViewer solution={selected} highlights={review?.highlightLines ?? []}/>
+            <div className="codeWindow">
+              <div className="panelBar"><div className="windowIdentity"><span className="codeWindowDots" aria-hidden="true"><i/><i/><i/></span><strong>{selected.member.name}</strong><span className="sourceBadge">{selected.source==='notion'?'Notion 첫 코드 블록':'GitHub 최신'}</span></div><a href={selected.sourceUrl} target="_blank" rel="noreferrer">원문 ↗</a></div>
+              <CodeViewer solution={selected} highlights={review?.highlightLines ?? []} issues={review?.issues ?? []}/>
+            </div>
           </div>
 
           <section className="aiReview">
-            <div className="reviewHeading"><div><span className="aiMark">AI</span><span><strong>개선 중심 코드 리뷰</strong><small>불필요한 코드 · 구현 개선 · 더 나은 알고리즘</small></span></div>{reviewStatus==='loading'?<span className="reviewLoading"><i className="syncSpinner"/> 분석 중</span>:null}</div>
+            <div className="reviewHeading"><div><span className="aiMark">AI</span><span><strong>코드 리뷰</strong><small>불필요한 코드 · 구현 개선 · 더 나은 알고리즘</small></span></div>{reviewStatus==='loading'?<span className="reviewLoading"><i className="syncSpinner"/> 분석 중</span>:null}</div>
 
             {review?<div className="reviewBody">
               <div className="reviewSummary"><span>우선순위</span><h2>{review.verdict}</h2><p><strong>복잡도</strong> {review.complexity}</p></div>

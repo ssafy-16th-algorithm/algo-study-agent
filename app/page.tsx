@@ -4,22 +4,26 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import SiteHeader from './components/site-header';
-import type { StudyProblem } from './lib/study';
+import type { Member, StudyProblem } from './lib/study';
 
 type StudyResponse = {problems:StudyProblem[];syncedAt:string};
+type MemberProgress={member:Member;completed:number;total:number;percent:number};
+type ProgressResponse={week:number;progress:MemberProgress[];syncedAt:string};
 
 export default function Home() {
   const [data,setData] = useState<StudyResponse|null>(null);
   const [error,setError] = useState('');
   const [loading,setLoading] = useState(true);
   const [selectedWeek,setSelectedWeek] = useState<number|null>(null);
+  const [progress,setProgress] = useState<MemberProgress[]>([]);
+  const [progressLoading,setProgressLoading] = useState(false);
 
-  const sync = useCallback(async ()=>{
+  const sync = useCallback(async (refresh=false)=>{
     await Promise.resolve();
     setLoading(true);
     setError('');
     try {
-      const response=await fetch('/api/study',{cache:'no-store'});
+      const response=await fetch(refresh?'/api/study?refresh=1':'/api/study',{cache:refresh?'no-store':'default'});
       const body=await response.json() as StudyResponse & {error?:string};
       if (!response.ok) throw new Error(body.error || 'Notion 동기화에 실패했습니다.');
       setData(body);
@@ -38,6 +42,28 @@ export default function Home() {
     return ()=>cancelAnimationFrame(frame);
   },[sync]);
 
+  useEffect(()=>{
+    if (!selectedWeek) return;
+    const controller=new AbortController();
+    const loadProgress=async ()=>{
+      await Promise.resolve();
+      if (controller.signal.aborted) return;
+      setProgressLoading(true);
+      try {
+        const response=await fetch(`/api/study?progressWeek=${selectedWeek}`,{signal:controller.signal});
+        const body=await response.json() as ProgressResponse & {error?:string};
+        if (!response.ok) throw new Error(body.error || '진행도를 불러오지 못했습니다.');
+        setProgress(body.progress);
+      } catch (reason) {
+        if (!(reason instanceof DOMException && reason.name==='AbortError')) setProgress([]);
+      } finally {
+        if (!controller.signal.aborted) setProgressLoading(false);
+      }
+    };
+    void loadProgress();
+    return ()=>controller.abort();
+  },[selectedWeek]);
+
   const weeks=useMemo(()=>Array.from(new Set((data?.problems ?? []).map((problem)=>problem.week))).sort((a,b)=>a-b),[data]);
   const visible=(data?.problems ?? []).filter((problem)=>problem.week===selectedWeek);
 
@@ -46,20 +72,19 @@ export default function Home() {
     <main className="homeMain">
       <section className="homeHero">
         <div>
-          <p className="eyebrow"><span className="liveDot"/> NOTION LIVE SYNC</p>
-          <h1>문제를 고르면,<br/>풀이 공간으로 이동합니다.</h1>
-          <p>Notion 문제 템플릿과 멤버별 첫 번째 코드 블록을 실시간으로 읽습니다. 저장된 예제 코드 없이 현재 작성된 내용만 표시합니다.</p>
+          <p className="eyebrow"><span className="liveDot"/> LIVE SYNC</p>
+          <h1>문제를 골라주세요.<br/>풀이 공간으로 이동합니다.</h1>
         </div>
         <aside className="sourcePanel">
-          <div><Image src="/notion-mark.png" width={42} height={42} alt="Notion"/><span><strong>Notion 원본</strong><small>문제 · 멤버 · 첫 코드 블록</small></span></div>
-          <div><Image src="/github-mark.png" width={42} height={42} alt="GitHub"/><span><strong>GitHub 대체</strong><small>Notion 코드가 없을 때만 조회</small></span></div>
+          <div><Image src="/notion-mark.png" width={42} height={42} alt="Notion"/><span><strong>Notion</strong><small>문제 · 멤버 · 첫 코드 블록</small></span></div>
+          <div><Image src="/github-mark.png" width={42} height={42} alt="GitHub"/><span><strong>GitHub</strong><small>Notion 코드가 없을 때 조회</small></span></div>
         </aside>
       </section>
 
       <section className="problemBoard" aria-live="polite">
         <div className="boardHeader">
           <div><p className="eyebrow">PROBLEMS</p><h2>주차별 문제</h2></div>
-          <button className="textButton" type="button" onClick={()=>void sync()} disabled={loading}>{loading?'동기화 중…':'지금 동기화'}</button>
+          <button className="textButton" type="button" onClick={()=>void sync(true)} disabled={loading}>{loading?'동기화 중…':'지금 동기화'}</button>
         </div>
 
         {loading && !data ? <div className="loadingPanel"><span className="syncSpinner"/><strong>Notion에서 문제를 읽는 중입니다.</strong></div> : null}
@@ -79,6 +104,16 @@ export default function Home() {
             {!visible.length?<div className="emptyList">이 주차에 등록된 문제가 없습니다.</div>:null}
           </div>
         </div>:null}
+      </section>
+
+      <section className="crewProgress" aria-labelledby="crew-progress-title">
+        <div className="crewHeading"><div><p className="eyebrow">WEEK {selectedWeek} · PROGRESS</p><h2 id="crew-progress-title">스터디원</h2></div><span>{progressLoading?'집계 중…':`${progress.filter((item)=>item.percent===100).length}명 완료`}</span></div>
+        <div className="crewGrid">{progress.map((item)=><article className="memberProgressCard" key={item.member.id}>
+          <div className="memberProgressTop"><span className={`memberAvatar ${item.member.tone}`}>{item.member.name.slice(-1)}</span><span><strong>{item.member.name}</strong><small>@{item.member.handle}</small></span><em>{item.percent}%</em></div>
+          <div className="progressTrack" aria-label={`${item.member.name} ${item.completed}/${item.total}문제 완료`}><i style={{width:`${item.percent}%`}}/></div>
+          <div className="progressMeta"><span>{item.completed}문제 완료</span><span>{item.total-item.completed}문제 남음</span></div>
+        </article>)}</div>
+        {progressLoading&&!progress.length?<div className="crewSkeleton"><i/><i/><i/><i/></div>:null}
       </section>
     </main>
     <footer><span>Notion 실시간 읽기 · 공개 열람</span><a href="https://app.notion.com/p/3c5a717ec99e80e3b24df528768d2ce1" target="_blank" rel="noreferrer">원본 Notion ↗</a></footer>

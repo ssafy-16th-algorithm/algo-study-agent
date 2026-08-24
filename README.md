@@ -17,8 +17,9 @@ SSAFY 16기 알고리즘 스터디의 문제, 제출 현황, 코드 비교와 AI
 AI 리뷰는 브라우저가 아닌 `/api/review` 서버 라우트에서 생성하며, 같은 코드의 결과는 코드 해시로 캐시됩니다. 배포 환경에는 다음 값을 비밀 환경 변수로 등록해야 합니다.
 
 ```text
-OPENAI_API_KEY=...
-OPENAI_REVIEW_MODEL=gpt-5  # 선택 사항
+LLM_API_KEY=...
+LLM_REVIEW_MODEL=groq/compound
+LLM_BASE_URL=https://api.groq.com/openai/v1  # 선택 사항
 NOTION_TOKEN=...           # Notion 실시간 동기화에 필요
 NOTION_PROBLEMS_DATA_SOURCE_ID=2dca717ec99e82a2ae1687ec3d44366a # 선택 사항
 ```
