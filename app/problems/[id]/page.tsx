@@ -95,6 +95,19 @@ function CodeViewer({solution,highlights,issues}:{solution:StudySolution;highlig
   const [activeLine,setActiveLine]=useState<number|null>(null);
   const issuesByLine=new Map<number,ReviewIssue[]>();
   issues.forEach((issue)=>issuesByLine.set(issue.line,[...(issuesByLine.get(issue.line) ?? []),issue]));
+  useEffect(()=>{
+    if(activeLine===null) return;
+    const closeOnOutside=(event:PointerEvent)=>{
+      if(event.target instanceof Element && !event.target.closest('.lineReviewAnchor')) setActiveLine(null);
+    };
+    const closeOnEscape=(event:KeyboardEvent)=>{if(event.key==='Escape') setActiveLine(null);};
+    document.addEventListener('pointerdown',closeOnOutside);
+    document.addEventListener('keydown',closeOnEscape);
+    return ()=>{
+      document.removeEventListener('pointerdown',closeOnOutside);
+      document.removeEventListener('keydown',closeOnEscape);
+    };
+  },[activeLine]);
   return <pre className="wideCode" tabIndex={0} aria-label="전체 풀이 코드">
     <code>{lines.map((line,index)=>{
       const lineNumber=index+1;
