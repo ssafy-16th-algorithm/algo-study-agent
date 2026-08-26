@@ -7,7 +7,7 @@ import type { StudyProblem, StudySolution } from '../lib/study';
 type ReviewStatus='idle'|'loading'|'ready'|'error';
 const memoryCache=new Map<string,Review>();
 const pendingRequests=new Map<string,Promise<Review>>();
-const STORAGE_PREFIX='algorithm-review:v11:';
+const STORAGE_PREFIX='algorithm-review:v13:';
 
 function shortHash(value:string) {
   let hash=2166136261;
@@ -27,7 +27,7 @@ function store(key:string,review:Review) {
   catch { /* 메모리 캐시는 계속 사용한다. */ }
 }
 
-async function fetchReview(problem:StudyProblem,solution:StudySolution) {
+async function fetchReview(problem:StudyProblem,solution:StudySolution,refresh=false) {
   const response=await fetch('/api/review',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -36,6 +36,7 @@ async function fetchReview(problem:StudyProblem,solution:StudySolution) {
       member:solution.member.name,
       language:solution.language,
       code:solution.code,
+      refresh,
     }),
   });
   const responseText=await response.text();
@@ -64,16 +65,17 @@ export function useCodeReview(problem:StudyProblem|null,solution:StudySolution|n
     return ()=>cancelAnimationFrame(frame);
   },[key]);
 
-  const request=useCallback(async ()=>{
+  const request=useCallback(async (refresh=false)=>{
     if (!problem || !solution?.code || !key) return;
     setStatus('loading');
     setError('');
+    if (refresh) setReview(null);
     try {
-      const cached=memoryCache.get(key) ?? readStored(key);
+      const cached=refresh ? null : memoryCache.get(key) ?? readStored(key);
       if (cached) { setReview(cached); setStatus('ready'); return; }
       let pending=pendingRequests.get(key);
       if (!pending) {
-        pending=fetchReview(problem,solution).then((result)=>{
+        pending=fetchReview(problem,solution,refresh).then((result)=>{
           memoryCache.set(key,result); store(key,result); return result;
         }).finally(()=>pendingRequests.delete(key));
         pendingRequests.set(key,pending);

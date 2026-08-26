@@ -163,6 +163,7 @@ button:disabled{opacity:.55;cursor:wait}
 .reviewHeading>div>span:last-child{display:flex;flex-direction:column}.reviewHeading small{color:var(--muted);font-size:11px}
 .aiMark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--blue);color:#fff;font:800 12px var(--font-inter)}
 .reviewLoading{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}.reviewLoading .syncSpinner{width:14px;height:14px}
+.visuallyHidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.reviewSkeleton{padding:24px;background:#fff}.reviewSkeleton i{display:block;border-radius:5px;background:#e8eaeb;animation:skeletonPulse 1.35s ease-in-out infinite}.skeletonSummary{padding:20px 22px;border-radius:10px;background:#f4f5f5}.skLabel{width:72px;height:10px}.skTitle{width:min(520px,82%);height:25px;margin-top:13px}.skText{width:100%;height:12px;margin-top:12px}.skText.medium{width:68%}.skText.short{width:42%}.skeletonContext,.skeletonIssues{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}.skeletonContext>div,.skeletonIssues>div{padding:20px;border:1px solid #e3e5e6;border-radius:10px}.skeletonIssues>div{min-height:190px}.skeletonIssues>div>span{display:flex;gap:7px;margin-bottom:24px}.skBadge{width:68px;height:20px;border-radius:4px!important}.skBadge.pale{width:48px;background:#eff0f0!important}.skeletonApproach{margin-top:18px;padding:22px;border-left:3px solid #d4d7d8;background:#f5f6f6}@keyframes skeletonPulse{0%,100%{opacity:.52}50%{opacity:1}}@media(prefers-reduced-motion:reduce){.reviewSkeleton i{animation:none}}
 .reviewBody{padding:24px}
 .reviewSummary{padding:20px 22px;border-radius:10px;background:var(--soft)}
 .reviewSummary>span,.approachCard>span{color:var(--blue);font-size:11px;font-weight:800;letter-spacing:.05em}
@@ -176,6 +177,7 @@ button:disabled{opacity:.55;cursor:wait}
 .kind1{background:#faebdd;color:#a45100}.kind2{background:#e8f2fb;color:#1264a3}.kind3{background:#f0e7f4;color:#734b91}
 .issueCard h3{margin:13px 0 10px;font-size:18px}
 .issueCard p{margin:7px 0;color:var(--muted);font-size:14px}.issueCard p strong{display:inline-block;width:42px;color:var(--ink)}
+.issueCard .issueCodeQuote{display:flex;align-items:flex-start;gap:4px;margin:10px 0;padding:9px 11px;border-radius:7px;background:#f3f5f5}.issueCodeQuote code{overflow-wrap:anywhere;color:#26343a;font:12px/1.55 'Cascadia Code',Consolas,monospace}
 .issueCard .suggestion{padding:12px;border-radius:7px;background:var(--soft);color:var(--ink)}
 .reviewCode{margin-top:16px;border:1px solid #303b41;border-radius:10px;background:#141719;box-shadow:0 8px 22px rgba(20,23,25,.12);overflow:hidden}.reviewCodeHeader{min-height:38px;padding:0 14px;display:flex;align-items:center;gap:9px;border-bottom:1px solid #29343a;background:#192024}.reviewCodeHeader span{padding:3px 7px;border:1px solid #326578;border-radius:4px;background:#17313b;color:#75dcf7;font:800 9px var(--font-inter);letter-spacing:.08em}.reviewCodeHeader strong{color:#aebdc3;font-size:11px;font-weight:650}.reviewCode pre{max-height:300px;margin:0;padding:18px;overflow:auto;color:#e6edf0;font:13px/1.75 'Cascadia Code',Consolas,monospace;white-space:pre;tab-size:4;scrollbar-width:thin;scrollbar-color:#52616a #141719}.reviewCode pre:focus-visible{outline:2px solid #55cceb;outline-offset:-2px}.reviewCode code{font:inherit}
 .approachCard{padding:22px;border-left:3px solid var(--blue);background:var(--blue-soft)}
@@ -194,7 +196,7 @@ footer{width:min(1180px,calc(100% - 48px));margin:0 auto;padding:25px 0 38px;bor
   .crewGrid,.crewSkeleton{grid-template-columns:repeat(2,1fr)}
   .problemBrowser{grid-template-columns:1fr}.weekRail{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line)}.weekRail button{min-width:92px}
   .detailMain{width:min(100% - 20px,760px)}.problemHero{align-items:start;flex-direction:column}.memberTabs{grid-template-columns:repeat(2,1fr)}.memberTabs button:nth-child(2){border-right:0}
-  .reviewContext,.issueList{grid-template-columns:1fr}.wideCode{height:min(78vh,900px);min-height:620px}.lineText{padding-right:45px}
+  .reviewContext,.issueList,.skeletonContext,.skeletonIssues{grid-template-columns:1fr}.wideCode{height:min(78vh,900px);min-height:620px}.lineText{padding-right:45px}
 }
 @media(max-width:560px){
   body{font-size:15px}.topbar{height:64px}.brand img{height:42px}.headerActions .primaryButton{display:none}.utilityButton{padding:8px 10px}

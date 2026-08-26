@@ -6,6 +6,7 @@ export type ReviewIssue = {
   severity:ReviewIssueSeverity;
   title:string;
   evidence:string;
+  codeQuote?:string;
   impact:string;
   suggestion:string;
   codeExample?:string;
@@ -29,4 +30,5 @@ export type ReviewRequest = {
   member?:string;
   language?:string;
   code?:string;
+  refresh?:boolean;
 };
