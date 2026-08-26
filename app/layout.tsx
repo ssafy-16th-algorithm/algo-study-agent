@@ -7,7 +7,11 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: 'SSAFY ALGO · 16th',
   description: 'SSAFY 16기 알고리즘 스터디의 주차별 문제, 멤버 풀이와 공개 AI 리뷰를 한곳에서 확인합니다.',
-  icons: { icon: '/ssafy-algo-logo.png', shortcut: '/ssafy-algo-logo.png', apple: '/ssafy-algo-logo.png' },
+  icons: {
+    icon: [{url:'/ssafy-algo-square.png',type:'image/png'}],
+    shortcut: ['/ssafy-algo-square.png'],
+    apple: [{url:'/ssafy-algo-square.png',type:'image/png'}],
+  },
   openGraph: {
     title: 'SSAFY ALGO · 16th',
     description: 'Notion × GitHub × AI로 연결한 알고리즘 스터디 대시보드',

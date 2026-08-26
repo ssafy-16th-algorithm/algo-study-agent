@@ -194,7 +194,7 @@ footer{width:min(1180px,calc(100% - 48px));margin:0 auto;padding:25px 0 38px;bor
   .topbar{grid-template-columns:1fr auto;padding:0 18px}.nav{display:none}
   .homeMain{width:min(100% - 28px,760px);padding-top:48px}.homeHero{grid-template-columns:1fr;gap:30px}.sourcePanel{display:grid;grid-template-columns:1fr 1fr}.sourcePanel>div+div{border-top:0;border-left:1px solid var(--line)}
   .crewGrid,.crewSkeleton{grid-template-columns:repeat(2,1fr)}
-  .problemBrowser{grid-template-columns:1fr}.weekRail{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line)}.weekRail button{min-width:92px}
+  .problemBrowser{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);height:clamp(520px,68svh,620px);min-height:0}.weekRail{min-height:72px;flex-direction:row;overflow-x:auto;overflow-y:hidden;border-right:0;border-bottom:1px solid var(--line);scrollbar-width:thin}.weekRail button{min-width:92px;flex:0 0 92px}.problemIndex{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
   .detailMain{width:min(100% - 20px,760px)}.problemHero{align-items:start;flex-direction:column}.memberTabs{grid-template-columns:repeat(2,1fr)}.memberTabs button:nth-child(2){border-right:0}
   .reviewContext,.issueList,.skeletonContext,.skeletonIssues{grid-template-columns:1fr}.wideCode{height:min(78vh,900px);min-height:620px}.lineText{padding-right:45px}
 }
@@ -202,7 +202,7 @@ footer{width:min(1180px,calc(100% - 48px));margin:0 auto;padding:25px 0 38px;bor
   body{font-size:15px}.topbar{height:64px}.brand img{height:42px}.headerActions .primaryButton{display:none}.utilityButton{padding:8px 10px}
   .homeHero h1{font-size:44px;line-height:1.08;letter-spacing:-.055em}.sourcePanel{grid-template-columns:1fr}.sourcePanel>div+div{border-left:0;border-top:1px solid var(--line)}
   .crewProgress{margin-top:24px;padding:20px 14px;border-radius:12px}.crewHeading{align-items:start}.crewHeading h2{font-size:22px}.crewGrid,.crewSkeleton{grid-template-columns:1fr}.memberProgressCard{padding:16px}
-  .problemBoard{border-radius:12px}.boardHeader{padding:20px}.problemIndex{padding:0 14px}.problemLink{grid-template-columns:38px 1fr auto;padding:18px 4px}
+  .problemBoard{border-radius:12px}.boardHeader{padding:20px}.problemBrowser{height:clamp(500px,70svh,570px)}.weekRail{min-height:70px}.problemIndex{padding:0 14px}.problemLink{grid-template-columns:38px 1fr auto;padding:18px 4px}
   .detailMain{width:100%;padding-top:18px}.detailTopline,.problemHero{padding-left:16px;padding-right:16px}.problemActions{width:100%}.problemActions a{flex:1;text-align:center}
   .memberTabs{border-radius:0}.memberTabs button{padding:12px 10px}.workspace{border-radius:0;border-left:0;border-right:0}.codePanel{padding:10px}.codeWindow{border-radius:9px}.panelBar{min-height:58px;padding:0 14px}.sourceBadge{display:none}
   .wideCode{height:74vh;min-height:520px;font-size:12px}.lineNumber{width:48px;padding-right:10px}.lineText{padding-left:12px}
