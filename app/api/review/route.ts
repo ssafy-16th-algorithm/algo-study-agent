@@ -180,51 +180,49 @@ export async function POST(request:Request) {
       model:ollamaModel!,
       messages:groqRequest.messages,
       stream:false,
-      think:'low',
-      options:{temperature:0,num_predict:700},
+      think:false,
+      options:{temperature:0,num_predict:900},
     }),
   });
-  let response:Response;
-  let provider:'ollama'|'groq'=ollamaConfigured?'ollama':'groq';
-  try {
-    response=ollamaConfigured ? await callOllama() : await callGroq(groqRequest);
-    if (!response.ok && provider==='ollama' && groqConfigured) {
-      const detail=await response.text();
-      console.warn('Ollama review unavailable; falling back to Groq',response.status,detail.slice(0,200));
-      provider='groq';
-      response=await callGroq(groqRequest);
-    }
-  } catch (error) {
-    console.error('AI review request failed',error);
-    return NextResponse.json({error:'코드 리뷰 서버에 연결하지 못했습니다.'},{status:502});
-  }
-
-  if (!response.ok) {
-    const detail = await response.text();
-    console.error('AI review failed',response.status,detail.slice(0,300));
-    if (response.status === 429) return NextResponse.json({error:'AI 사용량 제한입니다. 잠시 후 다시 시도해 주세요.'},{status:429});
-    if (response.status === 413) return NextResponse.json({error:'리뷰 요청이 너무 큽니다. 더 짧은 코드로 다시 시도해 주세요.'},{status:413});
-    return NextResponse.json({error:'코드 리뷰 생성에 실패했습니다.'},{status:502});
-  }
-
-  let payload = await response.json() as Record<string,unknown>;
   let parsed:unknown;
-  try { parsed = parseReviewText(outputText(payload)); }
-  catch {
-    if (provider!=='ollama' || !groqConfigured) return NextResponse.json({error:'AI 응답을 읽지 못했습니다.'},{status:502});
-    console.warn('Ollama returned invalid review JSON; falling back to Groq');
+  let provider:'ollama'|'groq'='ollama';
+  let usedModel='';
+  let lastStatus=502;
+
+  if (ollamaConfigured) {
+    let response:Response|undefined;
+    try { response=await callOllama(); }
+    catch (error) { console.warn('Ollama request failed; falling back to Groq',error); }
+    if (response) {
+      lastStatus=response.status;
+      if (!response.ok) {
+        const detail=await response.text();
+        console.warn('Ollama review unavailable; falling back to Groq',response.status,detail.slice(0,160));
+      } else {
+        const payload=await response.json() as Record<string,unknown>;
+        try { parsed=parseReviewText(outputText(payload)); usedModel=ollamaModel!; }
+        catch { console.warn('Ollama returned invalid review JSON; falling back to Groq',ollamaModel); }
+      }
+    }
+  }
+
+  if (parsed===undefined && groqConfigured) {
     provider='groq';
+    let response:Response;
     try { response=await callGroq(groqRequest); }
     catch { return NextResponse.json({error:'코드 리뷰 서버에 연결하지 못했습니다.'},{status:502}); }
+    lastStatus=response.status;
     if (!response.ok) {
       const detail=await response.text();
       console.error('Groq fallback failed',response.status,detail.slice(0,300));
-      return NextResponse.json({error:response.status===429?'AI 사용량 제한입니다. 잠시 후 다시 시도해 주세요.':'코드 리뷰 생성에 실패했습니다.'},{status:response.status===429?429:502});
+      return NextResponse.json({error:response.status===429?'모든 AI 모델의 사용량 제한에 도달했습니다. 잠시 후 다시 시도해 주세요.':'코드 리뷰 생성에 실패했습니다.'},{status:response.status===429?429:502});
     }
-    payload=await response.json() as Record<string,unknown>;
-    try { parsed=parseReviewText(outputText(payload)); }
+    const payload=await response.json() as Record<string,unknown>;
+    try { parsed=parseReviewText(outputText(payload)); usedModel=groqModel!; }
     catch { return NextResponse.json({error:'AI 응답을 읽지 못했습니다.'},{status:502}); }
   }
+
+  if (parsed===undefined) return NextResponse.json({error:lastStatus===429?'AI 사용량 제한에 도달했습니다. 잠시 후 다시 시도해 주세요.':'코드 리뷰 생성에 실패했습니다.'},{status:lastStatus===429?429:502});
   const normalizedReview=normalizeReview(parsed);
   const review=normalizedReview ? alignReviewLines(normalizedReview,code) : null;
   if (!review) return NextResponse.json({error:'AI 리뷰 내용을 생성하지 못했습니다. 다시 시도해 주세요.'},{status:502});
@@ -237,6 +235,7 @@ export async function POST(request:Request) {
   const result = NextResponse.json({review});
   result.headers.set('Cache-Control','public, max-age=31536000, immutable');
   result.headers.set('X-Review-Provider',provider);
+  result.headers.set('X-Review-Model',usedModel);
   if (workerCache) await workerCache.put(cacheUrl,result.clone());
   return result;
 }
