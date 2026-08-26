@@ -8,6 +8,22 @@ const STUDY_CACHE_TTL_MS = 60_000;
 const studyCache = new Map<string,{expiresAt:number;value:unknown}>();
 const studyRequests = new Map<string,Promise<unknown>>();
 
+function koreaDate() {
+  return new Intl.DateTimeFormat('en-CA',{
+    timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',
+  }).format(new Date());
+}
+
+function studyDueDate(problemDate:string) {
+  const dateValue=problemDate.slice(0,10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) return null;
+  const date=new Date(`${dateValue}T00:00:00Z`);
+  const addDays=date.getUTCDay()===1?2:date.getUTCDay()===3?2:date.getUTCDay()===5?3:0;
+  if (!addDays) return null;
+  date.setUTCDate(date.getUTCDate()+addDays);
+  return date.toISOString().slice(0,10);
+}
+
 async function cachedStudy<T>(key:string,loader:()=>Promise<T>,refresh=false):Promise<T> {
   const cached = studyCache.get(key);
   if (!refresh && cached && cached.expiresAt > Date.now()) return cached.value as T;
@@ -332,9 +348,17 @@ export async function GET(request:Request) {
         ()=>getProblemDetail(problem.id,token),
         refresh,
       )));
+      const today=koreaDate();
       const progress=members.map((member)=>{
         const completed=details.filter((detail)=>detail.solutions.some((solution)=>solution.member.id===member.id && Boolean(solution.code))).length;
-        return {member,completed,total:weekProblems.length,percent:weekProblems.length?Math.round(completed/weekProblems.length*100):0};
+        const urgentProblems=details.flatMap((detail)=>{
+          const solved=detail.solutions.some((solution)=>solution.member.id===member.id && Boolean(solution.code));
+          const dueDate=studyDueDate(detail.problem.date);
+          return !solved && dueDate && dueDate<=today
+            ? [{id:detail.problem.id,title:detail.problem.title,dueDate,overdue:dueDate<today}]
+            : [];
+        }).sort((a,b)=>a.dueDate.localeCompare(b.dueDate)||a.title.localeCompare(b.title,'ko'));
+        return {member,completed,total:weekProblems.length,percent:weekProblems.length?Math.round(completed/weekProblems.length*100):0,urgentProblems};
       });
       return NextResponse.json({week:progressWeek,progress,syncedAt:new Date().toISOString()},{headers:cacheHeaders});
     }

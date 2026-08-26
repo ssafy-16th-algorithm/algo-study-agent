@@ -80,11 +80,15 @@ button:disabled{opacity:.55;cursor:wait}
 .crewHeading{display:flex;align-items:end;justify-content:space-between;margin-bottom:22px}.crewHeading .eyebrow{margin-bottom:5px}.crewHeading h2{margin:0;font-size:26px;letter-spacing:-.035em}.crewHeading>span{color:var(--muted);font-size:12px;font-weight:700}
 .crewGrid,.crewSkeleton{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 .memberProgressCard{padding:18px;border:1px solid var(--line);border-radius:12px;background:var(--canvas);transition:transform .2s,border-color .2s,box-shadow .2s}.memberProgressCard:hover{transform:translateY(-2px);border-color:var(--line-strong);box-shadow:0 10px 24px rgba(26,35,42,.07)}
+.memberProgressCard.hasUrgent{border-color:rgba(235,72,72,.38);box-shadow:inset 0 0 0 1px rgba(235,72,72,.06)}
 .memberProgressTop{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center}.memberProgressTop>span:nth-child(2){display:flex;flex-direction:column;line-height:1.35}.memberProgressTop strong{font-size:14px}.memberProgressTop small{color:var(--faint);font-size:10px}.memberProgressTop em{color:var(--blue);font:800 18px var(--font-inter);font-style:normal;font-variant-numeric:tabular-nums}
+.urgentNotice{display:grid;grid-template-columns:28px 1fr;gap:8px;align-items:start;margin-top:14px;padding:10px;border:1px solid rgba(235,72,72,.22);border-radius:9px;background:rgba(235,72,72,.07);color:var(--ink)}.urgentNotice p{min-width:0;margin:0;font-size:11px;line-height:1.5;overflow-wrap:anywhere;word-break:keep-all}.urgentNotice p>strong{color:#cf3434}.siren{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:rgba(235,72,72,.12);font-size:15px;transform-origin:center bottom;animation:siren-alert .8s ease-in-out infinite alternate}
 .progressTrack{height:7px;margin:18px 0 9px;border-radius:99px;background:var(--line);overflow:hidden}.progressTrack i{display:block;height:100%;border-radius:inherit;background:var(--blue);transition:width .5s cubic-bezier(.2,.8,.2,1)}
 .progressMeta{display:flex;justify-content:space-between;color:var(--muted);font-size:10px}.progressMeta span:first-child{font-weight:700;color:var(--ink)}
 .crewSkeleton i{height:132px;border-radius:12px;background:linear-gradient(90deg,var(--soft),var(--hover),var(--soft));background-size:200% 100%;animation:skeleton 1.2s infinite}
 @keyframes skeleton{to{background-position:-200% 0}}
+@keyframes siren-alert{0%{transform:rotate(-7deg) scale(.96);filter:drop-shadow(0 0 0 rgba(235,72,72,0))}100%{transform:rotate(7deg) scale(1.08);filter:drop-shadow(0 0 5px rgba(235,72,72,.58))}}
+@media(prefers-reduced-motion:reduce){.siren{animation:none}}
 .loadingPanel,.errorPanel,.emptyList{min-height:260px;padding:42px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
 .loadingPanel{gap:14px;color:var(--muted)}
 .errorPanel strong{font-size:18px}.errorPanel p{max-width:620px;color:var(--muted);word-break:keep-all}.errorPanel button{margin-top:8px}

@@ -7,8 +7,16 @@ import SiteHeader from './components/site-header';
 import type { Member, StudyProblem } from './lib/study';
 
 type StudyResponse = {problems:StudyProblem[];syncedAt:string};
-type MemberProgress={member:Member;completed:number;total:number;percent:number};
+type UrgentProblem={id:string;title:string;dueDate:string;overdue:boolean};
+type MemberProgress={member:Member;completed:number;total:number;percent:number;urgentProblems:UrgentProblem[]};
 type ProgressResponse={week:number;progress:MemberProgress[];syncedAt:string};
+
+function vocative(name:string) {
+  const shortName=name.length>2?name.slice(1):name;
+  const last=shortName.charCodeAt(shortName.length-1);
+  const hasFinalConsonant=last>=0xac00&&last<=0xd7a3&&(last-0xac00)%28!==0;
+  return `${shortName}${hasFinalConsonant?'아':'야'}`;
+}
 
 export default function Home() {
   const [data,setData] = useState<StudyResponse|null>(null);
@@ -108,11 +116,12 @@ export default function Home() {
 
       <section className="crewProgress" aria-labelledby="crew-progress-title">
         <div className="crewHeading"><div><p className="eyebrow">WEEK {selectedWeek} · PROGRESS</p><h2 id="crew-progress-title">스터디원</h2></div><span>{progressLoading?'집계 중…':`${progress.filter((item)=>item.percent===100).length}명 완료`}</span></div>
-        <div className="crewGrid">{progress.map((item)=><article className="memberProgressCard" key={item.member.id}>
+        <div className="crewGrid">{progress.map((item)=>{const urgent=item.urgentProblems?.[0];return <article className={`memberProgressCard ${urgent?'hasUrgent':''}`} key={item.member.id}>
           <div className="memberProgressTop"><span className={`memberAvatar ${item.member.tone}`}>{item.member.name.slice(-1)}</span><span><strong>{item.member.name}</strong><small>@{item.member.handle}</small></span><em>{item.percent}%</em></div>
+          {urgent?<div className="urgentNotice" role="status"><span className="siren" aria-hidden="true">🚨</span><p><strong>{vocative(item.member.name)},</strong> {item.urgentProblems.map((problem)=>problem.title).join(', ')} 빨리 풀자!!!</p></div>:null}
           <div className="progressTrack" aria-label={`${item.member.name} ${item.completed}/${item.total}문제 완료`}><i style={{width:`${item.percent}%`}}/></div>
           <div className="progressMeta"><span>{item.completed}문제 완료</span><span>{item.total-item.completed}문제 남음</span></div>
-        </article>)}</div>
+        </article>})}</div>
         {progressLoading&&!progress.length?<div className="crewSkeleton"><i/><i/><i/><i/></div>:null}
       </section>
     </main>
