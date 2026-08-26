@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 
-const siteUrl = 'https://ssafy16-algostudy-agent.hyuck990324.chatgpt.site';
+const siteUrl = 'https://algo-study-agent.vercel.app';
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -17,7 +17,7 @@ export const metadata: Metadata = {
     description: 'Notion × GitHub × AI로 연결한 알고리즘 스터디 대시보드',
     url: siteUrl,
     siteName: 'SSAFY ALGO',
-    images: [{ url: '/og.png', width: 1730, height: 909, alt: 'AlgoStudy SSAFY 16th 대시보드' }],
+    images: [{ url: '/og.png', width: 1731, height: 909, alt: 'SSAFY ALGO 16기 알고리즘 스터디 플랫폼' }],
     locale: 'ko_KR',
     type: 'website',
   },
