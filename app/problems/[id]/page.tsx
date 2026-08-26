@@ -57,9 +57,12 @@ export default function ProblemPage() {
 
       {selected?.code?<section className="workspace">
         <div className="codePanel"><div className="codeWindow">
-          <div className="panelBar"><div className="windowIdentity"><span className="codeWindowDots" aria-hidden="true"><i/><i/><i/></span><strong>{selected.member.name}</strong><span className="sourceBadge">{selected.source==='notion'?'Notion  코드 블록':'GitHub 최신'}</span></div><div className="panelActions"><button className="reviewTrigger dark" type="button" disabled={reviewStatus==='loading'} onClick={()=>void requestReview()}>{reviewStatus==='loading'?'분석 중…':review?'AI 리뷰 보기':'AI 리뷰 받기'}</button><a href={selected.sourceUrl} target="_blank" rel="noreferrer">원문 ↗</a></div></div>
+          <div className="panelBar"><div className="windowIdentity"><span className="codeWindowDots" aria-hidden="true"><i/><i/><i/></span><strong>{selected.member.name}</strong><span className="sourceBadge">{selected.source==='notion'?'Notion 풀이 코드':'GitHub 최신'}</span></div><div className="panelActions"><button className="reviewTrigger dark" type="button" disabled={reviewStatus==='loading'} onClick={()=>void requestReview()}>{reviewStatus==='loading'?'분석 중…':review?'AI 리뷰 보기':'AI 리뷰 받기'}</button><a href={selected.sourceUrl} target="_blank" rel="noreferrer">원문 ↗</a></div></div>
           <CodeViewer key={`${selected.member.id}:${selected.code}`} code={selected.code} highlights={review?.highlightLines ?? []} issues={review?.issues ?? []}/>
-        </div></div>
+        </div>{selected.attemptedCode?<div className="codeWindow attemptedCodeWindow">
+          <div className="panelBar"><div className="windowIdentity"><span className="codeWindowDots muted" aria-hidden="true"><i/><i/><i/></span><strong>시도한 풀이</strong><span className="sourceBadge">{selected.attemptedLanguage || 'java'}</span></div><a href={selected.sourceUrl} target="_blank" rel="noreferrer">Notion 원문 ↗</a></div>
+          <CodeViewer key={`${selected.member.id}:attempted:${selected.attemptedCode}`} code={selected.attemptedCode} highlights={[]} issues={[]}/>
+        </div>:null}</div>
 
         <section className="solutionNotes" aria-label="풀이 기록">
           <article><span>01</span><div><h2>전략</h2><MarkdownNote content={selected.strategy} empty="아직 작성된 전략이 없습니다."/></div></article>

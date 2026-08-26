@@ -20,6 +20,8 @@ export type StudyProblem = {
 export type StudySolution = {
   member:Member;
   code:string|null;
+  attemptedCode:string|null;
+  attemptedLanguage:string;
   strategy:string;
   retrospective:string;
   language:string;

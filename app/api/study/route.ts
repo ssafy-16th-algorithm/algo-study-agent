@@ -99,30 +99,54 @@ function blockText(block:NotionBlock) {
   return (value?.rich_text ?? []).map((item)=>item.plain_text ?? '').join('').trim();
 }
 
-async function readSolutionContent(blockId:string,token:string,depth=0,inheritedSection:''|'strategy'|'retrospective'=''):Promise<{code:string;language:string;strategy:string;retrospective:string}> {
-  const result={code:'',language:'java',strategy:'',retrospective:''};
-  if (depth > 6) return result;
+type SolutionSection=''|'solution'|'attempted'|'strategy'|'retrospective';
+
+async function flattenNotionBlocks(blockId:string,token:string,depth=0):Promise<NotionBlock[]> {
+  if (depth > 8) return [];
   const blocks=await getBlockChildren(blockId,token);
-  let section:''|'strategy'|'retrospective'=inheritedSection;
+  const flattened:NotionBlock[]=[];
+  for (const block of blocks) {
+    flattened.push(block);
+    if (block.has_children) flattened.push(...await flattenNotionBlocks(block.id,token,depth+1));
+  }
+  return flattened;
+}
+
+function sectionFromLabel(block:NotionBlock,text:string):Exclude<SolutionSection,''>|null {
+  const name=text.normalize('NFKC').replace(/[^\p{L}\p{N}]/gu,'').replace(/^\d+/,'');
+  const structural=/^heading_[123]$/.test(block.type) || block.type==='toggle' || block.type==='callout';
+  const labelLike=structural || name.length<=32;
+  if (!labelLike) return null;
+  if (name.includes('시도한풀이') || name.includes('실패한풀이')) return 'attempted';
+  if (name.includes('전략') || name.includes('접근방법')) return 'strategy';
+  if (name.includes('후기') || name.includes('회고') || name.includes('느낀점')) return 'retrospective';
+  if (name==='풀이' || name.includes('풀이코드') || name.includes('정답코드')) return 'solution';
+  return null;
+}
+
+async function readSolutionContent(blockId:string,token:string):Promise<{code:string;language:string;attemptedCode:string;attemptedLanguage:string;strategy:string;retrospective:string}> {
+  const result={code:'',language:'java',attemptedCode:'',attemptedLanguage:'java',strategy:'',retrospective:''};
+  const blocks=await flattenNotionBlocks(blockId,token);
+  let section:SolutionSection='';
+  const sectionOrder:Record<SolutionSection,number>={'':0,solution:1,attempted:2,strategy:3,retrospective:4};
   for (const block of blocks) {
     const text=blockText(block);
-    const heading=/^heading_[123]$/.test(block.type);
-    const normalized=text.replace(/\s/g,'');
-    if (heading && normalized.includes('전략')) { section='strategy'; continue; }
-    if (heading && (normalized.includes('후기') || normalized.includes('회고'))) { section='retrospective'; continue; }
-    if (heading) section='';
-    if (!result.code && block.type === 'code') {
+    const detectedSection=sectionFromLabel(block,text);
+    if (detectedSection && sectionOrder[detectedSection]>=sectionOrder[section]) { section=detectedSection; continue; }
+    if (block.type === 'code') {
       const code=(block.code?.rich_text ?? []).map((item)=>item.plain_text ?? '').join('').trim();
-      if (code) { result.code=code; result.language=block.code?.language || 'java'; }
-    } else if (section && text) {
-      const prefix=block.type==='bulleted_list_item'?'• ':block.type==='numbered_list_item'?'– ':'';
+      if (code && (section==='strategy' || section==='retrospective')) {
+        result[section]+=`${result[section]?'\n':''}${code}`;
+      } else if (code && section==='attempted' && !result.attemptedCode) {
+        result.attemptedCode=code;
+        result.attemptedLanguage=block.code?.language || 'java';
+      } else if (code && !result.code) {
+        result.code=code;
+        result.language=block.code?.language || 'java';
+      }
+    } else if ((section==='strategy' || section==='retrospective') && text) {
+      const prefix=block.type==='bulleted_list_item'?'- ':block.type==='numbered_list_item'?'1. ':'';
       result[section]+=`${result[section]?'\n':''}${prefix}${text}`;
-    }
-    if (block.has_children) {
-      const nested=await readSolutionContent(block.id,token,depth+1,section);
-      if (!result.code && nested.code) { result.code=nested.code; result.language=nested.language; }
-      if (nested.strategy) result.strategy+=`${result.strategy?'\n':''}${nested.strategy}`;
-      if (nested.retrospective) result.retrospective+=`${result.retrospective?'\n':''}${nested.retrospective}`;
     }
   }
   return result;
@@ -226,6 +250,8 @@ async function getProblemDetail(problemId:string,token:string):Promise<ProblemDe
         return {
           member,
           code:notionContent.code,
+          attemptedCode:notionContent.attemptedCode || null,
+          attemptedLanguage:notionContent.attemptedLanguage,
           strategy:notionContent.strategy,
           retrospective:notionContent.retrospective,
           language:notionContent.language,
@@ -240,6 +266,8 @@ async function getProblemDetail(problemId:string,token:string):Promise<ProblemDe
       return {
         member,
         code:githubCode.code,
+        attemptedCode:null,
+        attemptedLanguage:'java',
         strategy:'',
         retrospective:'',
         language:githubCode.language,
@@ -251,6 +279,8 @@ async function getProblemDetail(problemId:string,token:string):Promise<ProblemDe
     return {
       member,
       code:null,
+      attemptedCode:null,
+      attemptedLanguage:'java',
       strategy:'',
       retrospective:'',
       language:'text',
