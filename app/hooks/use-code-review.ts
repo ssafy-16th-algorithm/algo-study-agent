@@ -7,7 +7,7 @@ import type { StudyProblem, StudySolution } from '../lib/study';
 type ReviewStatus='idle'|'loading'|'ready'|'error';
 const memoryCache=new Map<string,Review>();
 const pendingRequests=new Map<string,Promise<Review>>();
-const STORAGE_PREFIX='algorithm-review:v10:';
+const STORAGE_PREFIX='algorithm-review:v11:';
 
 function shortHash(value:string) {
   let hash=2166136261;

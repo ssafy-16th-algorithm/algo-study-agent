@@ -167,9 +167,11 @@ button:disabled{opacity:.55;cursor:wait}
 .reviewSummary{padding:20px 22px;border-radius:10px;background:var(--soft)}
 .reviewSummary>span,.approachCard>span{color:var(--blue);font-size:11px;font-weight:800;letter-spacing:.05em}
 .reviewSummary h2{margin:7px 0;font-size:23px;line-height:1.4}.reviewSummary p{margin:0;color:var(--muted)}
+.reviewContext{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}.reviewContext article{padding:18px 20px;border:1px solid var(--line);border-radius:10px}.reviewContext span,.learningCard>span{color:var(--blue);font-size:11px;font-weight:800;letter-spacing:.04em}.reviewContext p{margin:8px 0 0;color:var(--muted);line-height:1.65}.reviewContext ul{margin:8px 0 0;padding-left:19px;color:var(--muted)}.reviewContext li+li{margin-top:5px}
 .issueList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0}
 .issueCard{padding:20px;border:1px solid var(--line);border-radius:10px}
 .issueMeta{display:flex;align-items:center;justify-content:space-between}.issueMeta small{color:var(--faint);font-family:var(--font-inter);font-size:10px}
+.issueLabels{display:flex;align-items:center;gap:6px}.severity{padding:3px 7px;border-radius:4px;font-size:10px;font-style:normal;font-weight:800}.severityMust{background:#fee4e2;color:#b42318}.severityImprove{background:#fff0d7;color:#9a5500}.severityOptional{background:#e7f4ed;color:#237047}
 .issueKind{padding:3px 8px;border-radius:4px;background:#fbe4e4;color:#b42318;font-size:10px;font-weight:800}
 .kind1{background:#faebdd;color:#a45100}.kind2{background:#e8f2fb;color:#1264a3}.kind3{background:#f0e7f4;color:#734b91}
 .issueCard h3{margin:13px 0 10px;font-size:18px}
@@ -179,6 +181,7 @@ button:disabled{opacity:.55;cursor:wait}
 .approachCard{padding:22px;border-left:3px solid var(--blue);background:var(--blue-soft)}
 .approachCard h3{margin:7px 0 10px}.approachCard ol{margin:0;padding-left:20px}.approachCard li+li{margin-top:6px}.approachCard p{margin:12px 0 0;color:var(--muted)}
 .testCase{margin-top:16px;padding:17px 20px;border:1px dashed var(--line-strong);border-radius:9px}.testCase p{margin:4px 0 0;color:var(--muted)}
+.reviewNoIssues{margin:18px 0;padding:18px 20px;border:1px solid #b9dfc9;border-radius:10px;background:#f0f8f3}.reviewNoIssues strong{color:#237047}.reviewNoIssues p{margin:5px 0 0;color:var(--muted)}.learningCard{margin-top:16px;padding:20px;border:1px solid var(--line);border-radius:10px}.learningCard ol{margin:10px 0 0;padding-left:20px}.learningCard li+li{margin-top:6px}
 .reviewFallback,.emptyCode{min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:34px;text-align:center}
 .reviewFallback p,.emptyCode p{max-width:650px;color:var(--muted)}.reviewFallback .primaryButton{margin-top:7px}
 .emptyCode{border:1px solid var(--line);border-radius:0 0 14px 14px;background:var(--surface)}.emptyCode>a{color:var(--blue);font-weight:700}
@@ -191,7 +194,7 @@ footer{width:min(1180px,calc(100% - 48px));margin:0 auto;padding:25px 0 38px;bor
   .crewGrid,.crewSkeleton{grid-template-columns:repeat(2,1fr)}
   .problemBrowser{grid-template-columns:1fr}.weekRail{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line)}.weekRail button{min-width:92px}
   .detailMain{width:min(100% - 20px,760px)}.problemHero{align-items:start;flex-direction:column}.memberTabs{grid-template-columns:repeat(2,1fr)}.memberTabs button:nth-child(2){border-right:0}
-  .issueList{grid-template-columns:1fr}.wideCode{height:min(78vh,900px);min-height:620px}.lineText{padding-right:45px}
+  .reviewContext,.issueList{grid-template-columns:1fr}.wideCode{height:min(78vh,900px);min-height:620px}.lineText{padding-right:45px}
 }
 @media(max-width:560px){
   body{font-size:15px}.topbar{height:64px}.brand img{height:42px}.headerActions .primaryButton{display:none}.utilityButton{padding:8px 10px}
