@@ -1,34 +1,24 @@
-# algo-study-agent
+# SSAFY ALGO
 
-SSAFY 16기 알고리즘 스터디의 문제, 제출 현황, 코드 비교와 AI 리뷰를 공개하는 웹 대시보드입니다.
+SSAFY 16기 알고리즘 스터디의 문제와 풀이를 확인하는 웹 대시보드입니다.
 
-## 주요 기능
+## 링크
 
-- Notion 문제와 GitHub 풀이 현황 통합
-- 주차별 제출 상태 확인
-- 동일 문제 코드 비교와 공개 AI 리뷰
-- 라이트 및 다크 모드
-- 모바일, 태블릿, 데스크톱 반응형 지원
+- [SSAFY ALGO](https://algo-study-agent.vercel.app/)
+- [스터디 Notion](https://app.notion.com/p/3c5a717ec99e80e3b24df528768d2ce1)
+- [코드 저장소](https://github.com/ssafy-16th-algorithm/algo-study-agent)
 
-## 동기화와 AI 리뷰
+## 기능
 
-서버가 Notion의 문제 데이터 소스를 조회하고, 각 문제 안의 `문제풀이` 데이터베이스에서 멤버 이름과 일치하는 페이지를 찾습니다. 그 페이지의 첫 번째 코드 블록을 매 요청마다 읽으며, 저장된 예제 코드나 코드 스냅샷은 사용하지 않습니다. Notion 코드가 없을 때만 공개 GitHub 저장소를 대체 소스로 조회합니다.
-
-AI 리뷰는 브라우저가 아닌 `/api/review` 서버 라우트에서 생성하며, 같은 코드의 결과는 코드 해시로 캐시됩니다. 배포 환경에는 다음 값을 비밀 환경 변수로 등록해야 합니다.
-
-```text
-LLM_API_KEY=...
-LLM_REVIEW_MODEL=groq/compound-mini
-LLM_BASE_URL=https://api.groq.com/openai/v1  # 선택 사항
-OLLAMA_API_KEY=...        # Ollama Cloud 우선 호출
-OLLAMA_REVIEW_MODEL=gpt-oss:120b
-NOTION_TOKEN=...           # Notion 실시간 동기화에 필요
-NOTION_PROBLEMS_DATA_SOURCE_ID=2dca717ec99e82a2ae1687ec3d44366a # 선택 사항
-```
-
-`NOTION_TOKEN`은 SSAFY 16기 스터디 페이지와 하위 데이터베이스에 읽기 권한이 있어야 합니다. 문제 상세 페이지는 60초마다 현재 Notion 코드를 다시 확인합니다. 전략과 후기는 제한된 Markdown 문법으로 안전하게 표시합니다. AI 리뷰는 버튼을 눌렀을 때만 생성하며 코드 해시로 캐시합니다. `OLLAMA_REVIEW_MODEL`을 먼저 사용하고, Ollama 사용량 제한·서비스 오류·잘못된 JSON 응답이 발생하면 `LLM_REVIEW_MODEL`로 전환합니다.
-
-코드 구조와 변경 원칙은 [`REFACTORING.md`](./REFACTORING.md)를 따릅니다.
+- Notion의 주차별 문제와 풀이 동기화
+- 풀이, 시도한 풀이, 전략, 후기 표시
+- 기본 LLM 모델 호출량 초과 시, 대체 모델로 fallback
+- Notion 풀이가 없을 때 GitHub 코드 조회
+- Java 코드 문법 강조
+- 멤버별 주차 진행도 표시
+- 마감 당일 및 마감 이후 미완료 문제 알림
+- 버튼으로 요청하는 AI 코드 리뷰
+- 라이트·다크 모드와 반응형 화면
 
 ## 실행
 
@@ -36,3 +26,29 @@ NOTION_PROBLEMS_DATA_SOURCE_ID=2dca717ec99e82a2ae1687ec3d44366a # 선택 사항
 npm install
 npm run dev
 ```
+
+프로덕션 빌드
+
+```bash
+npm run build
+```
+
+## 최근 업데이트
+
+### 2026-08-26
+
+- 시도한 풀이 코드 블록 추가
+- AI 코드 리뷰 내용과 API 처리 개선
+- Ollama 실패 시 Groq로 전환하는 fallback 추가
+- 로고 이미지와 모바일 반응형 UI 수정
+- 스터디 마감일 기준 미완료 문제 사이렌 알림 추가
+- 브라우저 탭 아이콘과 링크 미리보기 이미지 변경
+
+### 2026-08-24
+
+- SSAFY 알고리즘 스터디 대시보드 생성
+- 주차별 문제 탐색과 Notion 실시간 동기화 추가
+- 공개 AI 리뷰, 라이트·다크 모드 추가
+- 수동 AI 리뷰 요청과 전략·후기 영역 추가
+- AI 리뷰 예시 Java 코드 블록 추가
+- LLM 모델 설정, JSON 응답 처리, 토큰 제한 및 배포 빌드 수정
