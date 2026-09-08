@@ -1,11 +1,12 @@
-export type MemberId = 'jonghyuck' | 'yeajeong' | 'taekgi' | 'minkyung';
+export type MemberId = 'jonghyuck' | 'yeajeong' | 'taekgi' | 'minkyung' | 'juyeon' | 'jiwoo';
 
 export type Member = {
   id:MemberId;
   name:string;
-  handle:string;
-  repositoryUrl:string;
-  tone:'blue'|'purple'|'orange'|'green';
+  joinedWeek:number;
+  handle:string|null;
+  repositoryUrl:string|null;
+  tone:'blue'|'purple'|'orange'|'green'|'teal'|'pink';
 };
 
 export type StudyProblem = {
@@ -36,9 +37,15 @@ export type ProblemDetail = {
 };
 
 export const members:Member[] = [
-  {id:'jonghyuck',name:'이종혁',handle:'jonghyuck',repositoryUrl:'https://github.com/ssafy-16th-algorithm/jonghyuck',tone:'blue'},
-  {id:'yeajeong',name:'강예정',handle:'yeajeong',repositoryUrl:'https://github.com/ssafy-16th-algorithm/yeajeong',tone:'purple'},
-  {id:'taekgi',name:'민택기',handle:'taekki',repositoryUrl:'https://github.com/ssafy-16th-algorithm/taekki',tone:'orange'},
-  {id:'minkyung',name:'주민경',handle:'minkyung-',repositoryUrl:'https://github.com/ssafy-16th-algorithm/minkyung-',tone:'green'},
+  {id:'jonghyuck',name:'이종혁',joinedWeek:1,handle:'jonghyuck',repositoryUrl:'https://github.com/ssafy-16th-algorithm/jonghyuck',tone:'blue'},
+  {id:'yeajeong',name:'강예정',joinedWeek:1,handle:'yeajeong',repositoryUrl:'https://github.com/ssafy-16th-algorithm/yeajeong',tone:'purple'},
+  {id:'taekgi',name:'민택기',joinedWeek:1,handle:'taekki',repositoryUrl:'https://github.com/ssafy-16th-algorithm/taekki',tone:'orange'},
+  {id:'minkyung',name:'주민경',joinedWeek:1,handle:'minkyung-',repositoryUrl:'https://github.com/ssafy-16th-algorithm/minkyung-',tone:'green'},
+  {id:'juyeon',name:'정주연',joinedWeek:8,handle:null,repositoryUrl:null,tone:'teal'},
+  {id:'jiwoo',name:'박지우',joinedWeek:8,handle:null,repositoryUrl:null,tone:'pink'},
 ];
+
+export function membersForWeek(week:number):Member[] {
+  return members.filter((member)=>member.joinedWeek<=week);
+}
 

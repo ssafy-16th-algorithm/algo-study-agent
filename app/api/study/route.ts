@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { members, type Member, type ProblemDetail, type StudyProblem, type StudySolution } from '../../lib/study';
+import { members, membersForWeek, type Member, type ProblemDetail, type StudyProblem, type StudySolution } from '../../lib/study';
 
 const NOTION_VERSION = '2025-09-03';
 const DEFAULT_PROBLEM_SOURCE = '2dca717ec99e82a2ae1687ec3d44366a';
@@ -129,6 +129,7 @@ async function flattenNotionBlocks(blockId:string,token:string,depth=0):Promise<
 }
 
 function sectionFromLabel(block:NotionBlock,text:string):Exclude<SolutionSection,''>|null {
+  if (block.type==='code') return null;
   const name=text.normalize('NFKC').replace(/[^\p{L}\p{N}]/gu,'').replace(/^\d+/,'');
   const structural=/^heading_[123]$/.test(block.type) || block.type==='toggle' || block.type==='callout';
   const labelLike=structural || name.length<=32;
@@ -210,6 +211,7 @@ async function githubTree(member:Member) {
 }
 
 async function findGithubFallback(problem:StudyProblem,member:Member) {
+  if (!member.handle || !member.repositoryUrl) return null;
   try {
     const paths = await githubTree(member);
     const titleToken = normalize(problem.title);
@@ -301,7 +303,7 @@ async function getProblemDetail(problemId:string,token:string):Promise<ProblemDe
       retrospective:'',
       language:'text',
       source:null,
-      sourceUrl:solutionPage?.url ?? member.repositoryUrl,
+      sourceUrl:solutionPage?.url ?? (solutionPage ? `https://app.notion.com/p/${solutionPage.id.replace(/-/g,'')}` : member.repositoryUrl ?? problem.notionUrl),
     };
   }));
 
@@ -349,7 +351,7 @@ export async function GET(request:Request) {
         refresh,
       )));
       const today=koreaDate();
-      const progress=members.map((member)=>{
+      const progress=membersForWeek(progressWeek).map((member)=>{
         const completed=details.filter((detail)=>detail.solutions.some((solution)=>solution.member.id===member.id && Boolean(solution.code))).length;
         const urgentProblems=details.flatMap((detail)=>{
           const solved=detail.solutions.some((solution)=>solution.member.id===member.id && Boolean(solution.code));

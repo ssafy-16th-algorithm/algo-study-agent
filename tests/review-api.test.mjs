@@ -1,0 +1,138 @@
+import './register-typescript.mjs';
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+const { POST } = await import('../app/api/review/route.ts');
+const review = { verdict: '✅ 정상', currentApproach: '순회', issues: [] };
+let client = 0;
+function setup(t, respond, { groq = true } = {}) {
+  for (const [name, value] of Object.entries({ OLLAMA_API_KEY: 'test', OLLAMA_REVIEW_MODEL: 'test-ollama', LLM_API_KEY: groq ? 'test' : '', LLM_REVIEW_MODEL: groq ? 'test-groq' : '' })) {
+    const previous = process.env[name];
+    process.env[name] = value;
+    t.after(() => { if (previous === undefined) delete process.env[name]; else process.env[name] = previous; });
+  }
+  t.mock.method(globalThis, 'fetch', respond);
+}
+function request(ip = `review-test-${++client}`) {
+  return new Request('http://localhost/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-forwarded-for': ip }, body: JSON.stringify({ problem: { title: '테스트' }, code: 'class Main {}' }) });
+}
+
+test('falls back after 429 and exposes the successful provider', async (t) => {
+  setup(t, async (url) => String(url).includes('ollama.com')
+    ? new Response('', { status: 429, headers: { 'Retry-After': '20' } })
+    : Response.json({ choices: [{ message: { content: JSON.stringify(review) } }] }));
+  const response = await POST(request());
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('X-Review-Provider'), 'groq');
+  assert.equal((await response.json()).review.verdict, '✅ 정상');
+});
+
+test('returns the longest provider cooldown so a retry cannot call either provider too soon', async (t) => {
+  setup(t, async (url) => new Response('', { status: 429, headers: { 'Retry-After': String(url).includes('ollama.com') ? '20' : '5' } }));
+  const response = await POST(request());
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get('Retry-After'), '20');
+  const body = await response.json();
+  assert.equal(body.retryable, true);
+  assert.equal(body.retryAfterSeconds, 20);
+});
+
+test('recovers from a malformed HTTP body through the next provider', async (t) => {
+  setup(t, async (url) => String(url).includes('ollama.com')
+    ? new Response('<html>gateway error</html>')
+    : Response.json({ choices: [{ message: { content: JSON.stringify(review) } }] }));
+  const response = await POST(request());
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('X-Review-Provider'), 'groq');
+});
+
+test('does not convert an empty model object into a successful review', async (t) => {
+  setup(t, async () => Response.json({ message: { content: '{}' } }), { groq: false });
+  const response = await POST(request());
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).retryable, true);
+});
+
+test('marks authentication failures as non-retryable', async (t) => {
+  setup(t, async () => new Response('', { status: 401 }));
+  const response = await POST(request());
+  assert.equal((await response.json()).retryable, false);
+});
+
+test('marks gateway failures as retryable', async (t) => {
+  setup(t, async () => new Response('', { status: 502 }));
+  const response = await POST(request());
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).retryable, true);
+});
+
+test('stops a stalled provider after 15 seconds and falls back', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let entered;
+  const started = new Promise((resolve) => { entered = resolve; });
+  let providerSignal;
+  setup(t, async (url, init) => {
+    if (!String(url).includes('ollama.com')) return Response.json({ choices: [{ message: { content: JSON.stringify(review) } }] });
+    providerSignal = init.signal;
+    entered();
+    return new Promise((resolve, reject) => init.signal?.addEventListener('abort', () => reject(init.signal.reason), { once: true }));
+  });
+  const pending = POST(request());
+  await started;
+  assert.ok(providerSignal, 'provider fetch must have a timeout signal');
+  t.mock.timers.tick(15_000);
+  const response = await pending;
+  assert.equal(providerSignal.aborted, true);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('X-Review-Provider'), 'groq');
+});
+
+test('app rate limit supplies a cooldown and stops automatic retries', async (t) => {
+  setup(t, async () => Response.json({ message: { content: JSON.stringify(review) } }));
+  const ip = `rate-limit-${++client}`;
+  for (let index = 0; index < 20; index++) await POST(request(ip));
+  const response = await POST(request(ip));
+  assert.equal(response.status, 429);
+  const body = await response.json();
+  assert.equal(body.code, 'APP_RATE_LIMIT');
+  assert.equal(body.retryable, false);
+  assert.ok(Number(response.headers.get('Retry-After')) > 3500);
+});
+test('canceling a provider request does not start the fallback', async (t) => {
+  let started;
+  const entered = new Promise((resolve) => { started = resolve; });
+  let calls = 0;
+  setup(t, async (_url, init) => {
+    calls++;
+    started();
+    return new Promise((resolve, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true }));
+  });
+  const controller = new AbortController();
+  const pending = POST(new Request(request(), { signal: controller.signal }));
+  await entered;
+  controller.abort();
+  const response = await pending;
+  assert.equal(response.status, 499);
+  assert.equal((await response.json()).retryable, false);
+  assert.equal(calls, 1);
+});
+test('provider timeout includes reading the response body', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let started;
+  const entered = new Promise((resolve) => { started = resolve; });
+  setup(t, async (url, init) => {
+    if (!String(url).includes('ollama.com')) return Response.json({ choices: [{ message: { content: JSON.stringify(review) } }] });
+    return new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{'));
+        init.signal.addEventListener('abort', () => controller.error(init.signal.reason), { once: true });
+        started();
+      },
+    }));
+  });
+  const pending = POST(request());
+  await entered;
+  t.mock.timers.tick(15_000);
+  const response = await pending;
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('X-Review-Provider'), 'groq');
+});

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import SiteHeader from './components/site-header';
-import type { Member, StudyProblem } from './lib/study';
+import { membersForWeek, type Member, type StudyProblem } from './lib/study';
 
 type StudyResponse = {problems:StudyProblem[];syncedAt:string};
 type UrgentProblem={id:string;title:string;dueDate:string;overdue:boolean};
@@ -23,7 +23,7 @@ export default function Home() {
   const [error,setError] = useState('');
   const [loading,setLoading] = useState(true);
   const [selectedWeek,setSelectedWeek] = useState<number|null>(null);
-  const [progress,setProgress] = useState<MemberProgress[]>([]);
+  const [progressData,setProgressData] = useState<Pick<ProgressResponse,'week'|'progress'>|null>(null);
   const [progressLoading,setProgressLoading] = useState(false);
 
   const sync = useCallback(async (refresh=false)=>{
@@ -61,9 +61,9 @@ export default function Home() {
         const response=await fetch(`/api/study?progressWeek=${selectedWeek}`,{signal:controller.signal});
         const body=await response.json() as ProgressResponse & {error?:string};
         if (!response.ok) throw new Error(body.error || '진행도를 불러오지 못했습니다.');
-        setProgress(body.progress);
+        if (!controller.signal.aborted) setProgressData(body);
       } catch (reason) {
-        if (!(reason instanceof DOMException && reason.name==='AbortError')) setProgress([]);
+        if (!controller.signal.aborted && !(reason instanceof DOMException && reason.name==='AbortError')) setProgressData({week:selectedWeek,progress:[]});
       } finally {
         if (!controller.signal.aborted) setProgressLoading(false);
       }
@@ -74,6 +74,11 @@ export default function Home() {
 
   const weeks=useMemo(()=>Array.from(new Set((data?.problems ?? []).map((problem)=>problem.week))).sort((a,b)=>a-b),[data]);
   const visible=(data?.problems ?? []).filter((problem)=>problem.week===selectedWeek);
+  const activeMembers=membersForWeek(selectedWeek ?? 0);
+  const progress=progressData?.week===selectedWeek
+    ? progressData.progress.filter((item)=>activeMembers.some((member)=>member.id===item.member.id))
+    : [];
+  const progressPending=selectedWeek!==null && (progressLoading || progressData?.week!==selectedWeek);
 
   return <div className="appShell">
     <SiteHeader/>
@@ -115,14 +120,14 @@ export default function Home() {
       </section>
 
       <section className="crewProgress" aria-labelledby="crew-progress-title">
-        <div className="crewHeading"><div><p className="eyebrow">WEEK {selectedWeek} · PROGRESS</p><h2 id="crew-progress-title">스터디원</h2></div><span>{progressLoading?'집계 중…':`${progress.filter((item)=>item.percent===100).length}명 완료`}</span></div>
+        <div className="crewHeading"><div><p className="eyebrow">WEEK {selectedWeek} · PROGRESS</p><h2 id="crew-progress-title">스터디원</h2></div><span>{progressPending?'집계 중…':`${progress.filter((item)=>item.percent===100).length}명 완료`}</span></div>
         <div className="crewGrid">{progress.map((item)=>{const urgent=item.urgentProblems?.[0];return <article className={`memberProgressCard ${urgent?'hasUrgent':''}`} key={item.member.id}>
-          <div className="memberProgressTop"><span className={`memberAvatar ${item.member.tone}`}>{item.member.name.slice(-1)}</span><span><strong>{item.member.name}</strong><small>@{item.member.handle}</small></span><em>{item.percent}%</em></div>
+          <div className="memberProgressTop"><span className={`memberAvatar ${item.member.tone}`}>{item.member.name.slice(-1)}</span><span><strong>{item.member.name}</strong><small>{item.member.handle?`@${item.member.handle}`:'Notion'}</small></span><em>{item.percent}%</em></div>
           {urgent?<div className="urgentNotice" role="status"><span className="siren" aria-hidden="true">🚨</span><p><strong>{vocative(item.member.name)},</strong> {item.urgentProblems.map((problem)=>problem.title).join(', ')} 빨리 풀자!!!</p></div>:null}
           <div className="progressTrack" aria-label={`${item.member.name} ${item.completed}/${item.total}문제 완료`}><i style={{width:`${item.percent}%`}}/></div>
           <div className="progressMeta"><span>{item.completed}문제 완료</span><span>{item.total-item.completed}문제 남음</span></div>
         </article>})}</div>
-        {progressLoading&&!progress.length?<div className="crewSkeleton"><i/><i/><i/><i/></div>:null}
+        {progressPending&&!progress.length?<div className="crewSkeleton">{activeMembers.map((member)=><i key={member.id}/>)}</div>:null}
       </section>
     </main>
     <footer><span>SSAFY 16TH ALGORITHM STUDY 2026</span><a href="https://app.notion.com/p/3c5a717ec99e80e3b24df528768d2ce1" target="_blank" rel="noreferrer">원본 Notion ↗</a></footer>

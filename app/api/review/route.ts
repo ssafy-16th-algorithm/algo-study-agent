@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { Review, ReviewIssue, ReviewRequest } from '../../lib/review';
+import { isRetryableStatus, retryAfterSeconds } from '../../lib/review-retry';
+
+export const maxDuration = 40;
 
 const requestWindows = new Map<string,{count:number;resetAt:number}>();
 
@@ -35,6 +38,7 @@ function normalizeReview(value:unknown):Review|null {
   if (!value || typeof value !== 'object') return null;
   const container=value as Record<string,unknown>;
   const raw=(container.review && typeof container.review === 'object' ? container.review : container) as Record<string,unknown>;
+  if (typeof raw.verdict!=='string' || !raw.verdict.trim() || typeof raw.currentApproach!=='string' || !raw.currentApproach.trim() || !Array.isArray(raw.issues)) return null;
   const allowedKinds=new Set<ReviewIssue['kind']>(['삭제 후보','개선','오류 위험','알고리즘']);
   const allowedSeverities=new Set<ReviewIssue['severity']>(['반드시 수정','개선 권장','선택 사항']);
   const stringList=(value:unknown,limit:number)=>Array.isArray(value)?value.filter((item):item is string=>typeof item==='string'&&Boolean(item.trim())).map((item)=>item.trim()).slice(0,limit):[];
@@ -102,13 +106,16 @@ export async function POST(request:Request) {
   const groqModel=process.env.LLM_REVIEW_MODEL?.trim();
   const ollamaConfigured=Boolean(ollamaApiKey && ollamaModel);
   const groqConfigured=Boolean(groqApiKey && groqModel);
-  if (!ollamaConfigured && !groqConfigured) return NextResponse.json({error:'AI 리뷰 API 키와 모델 설정이 필요합니다.',code:'AI_NOT_CONFIGURED'},{status:503});
+  if (!ollamaConfigured && !groqConfigured) return NextResponse.json({error:'AI 리뷰 API 키와 모델 설정이 필요합니다.',code:'AI_NOT_CONFIGURED',retryable:false},{status:503});
 
   const clientId = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'anonymous';
   const now = Date.now();
   const window = requestWindows.get(clientId);
   if (!window || window.resetAt < now) requestWindows.set(clientId,{count:1,resetAt:now+60*60*1000});
-  else if (++window.count > 20) return NextResponse.json({error:'잠시 후 다시 시도해 주세요.'},{status:429});
+  else if (++window.count > 20) {
+    const retryAfter=Math.max(1,Math.ceil((window.resetAt-now)/1000));
+    return NextResponse.json({error:'리뷰 요청 횟수를 초과했습니다. 제한이 해제된 후 다시 요청해 주세요.',code:'APP_RATE_LIMIT',retryable:false,retryAfterSeconds:retryAfter},{status:429,headers:{'Retry-After':String(retryAfter),'Cache-Control':'no-store'}});
+  }
 
   let input:ReviewRequest;
   try { input = await request.json() as ReviewRequest; }
@@ -168,64 +175,60 @@ export async function POST(request:Request) {
       }],
       response_format:{type:'json_object'},
     };
-  const callGroq = (body:Record<string,unknown>) => fetch(`${apiBaseUrl}/chat/completions`,{
-    method:'POST',
-    headers:{Authorization:`Bearer ${groqApiKey}`,'Content-Type':'application/json'},
-    body:JSON.stringify(body),
-  });
-  const callOllama = () => fetch('https://ollama.com/api/chat',{
-    method:'POST',
-    headers:{Authorization:`Bearer ${ollamaApiKey}`,'Content-Type':'application/json'},
-    body:JSON.stringify({
-      model:ollamaModel!,
-      messages:groqRequest.messages,
-      stream:false,
-      think:false,
-      options:{temperature:0,num_predict:900},
-    }),
-  });
-  let parsed:unknown;
-  let provider:'ollama'|'groq'='ollama';
+  const providers = [
+    ...(ollamaConfigured ? [{
+      name:'ollama',model:ollamaModel!,url:'https://ollama.com/api/chat',apiKey:ollamaApiKey!,
+      body:{model:ollamaModel!,messages:groqRequest.messages,stream:false,think:false,options:{temperature:0,num_predict:900}},
+    }] : []),
+    ...(groqConfigured ? [{name:'groq',model:groqModel!,url:`${apiBaseUrl}/chat/completions`,apiKey:groqApiKey!,body:groqRequest}] : []),
+  ];
+  let review:Review|null=null;
+  let provider='';
   let usedModel='';
-  let lastStatus=502;
-
-  if (ollamaConfigured) {
-    let response:Response|undefined;
-    try { response=await callOllama(); }
-    catch (error) { console.warn('Ollama request failed; falling back to Groq',error); }
-    if (response) {
-      lastStatus=response.status;
+  const failures:Array<{status:number;retryable:boolean;retryAt:number}>=[];
+  for (const candidate of providers) {
+    if (request.signal.aborted) return NextResponse.json({error:'리뷰 요청을 취소했습니다.',retryable:false},{status:499});
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(new DOMException('Model request timed out','TimeoutError')),15_000);
+    try {
+      const response=await fetch(candidate.url,{
+        method:'POST',
+        headers:{Authorization:`Bearer ${candidate.apiKey}`,'Content-Type':'application/json'},
+        body:JSON.stringify(candidate.body),
+        signal:AbortSignal.any([request.signal,controller.signal]),
+      });
       if (!response.ok) {
-        const detail=await response.text();
-        console.warn('Ollama review unavailable; falling back to Groq',response.status,detail.slice(0,160));
-      } else {
-        const payload=await response.json() as Record<string,unknown>;
-        try { parsed=parseReviewText(outputText(payload)); usedModel=ollamaModel!; }
-        catch { console.warn('Ollama returned invalid review JSON; falling back to Groq',ollamaModel); }
+        const retryable=isRetryableStatus(response.status);
+        const delay=retryAfterSeconds(response.headers.get('Retry-After')) ?? (response.status===429?5:2);
+        failures.push({status:response.status,retryable,retryAt:Date.now()+delay*1000});
+        await response.body?.cancel();
+        continue;
       }
+      const payload=await response.json() as Record<string,unknown>;
+      const normalized=normalizeReview(parseReviewText(outputText(payload)));
+      if (!normalized) throw new Error('Invalid review content');
+      review=alignReviewLines(normalized,code);
+      provider=candidate.name;
+      usedModel=candidate.model;
+      break;
+    } catch {
+      if (request.signal.aborted) return NextResponse.json({error:'리뷰 요청을 취소했습니다.',retryable:false},{status:499});
+      failures.push({status:502,retryable:true,retryAt:Date.now()+2000});
+    } finally {
+      clearTimeout(timeout);
     }
   }
-
-  if (parsed===undefined && groqConfigured) {
-    provider='groq';
-    let response:Response;
-    try { response=await callGroq(groqRequest); }
-    catch { return NextResponse.json({error:'코드 리뷰 서버에 연결하지 못했습니다.'},{status:502}); }
-    lastStatus=response.status;
-    if (!response.ok) {
-      const detail=await response.text();
-      console.error('Groq fallback failed',response.status,detail.slice(0,300));
-      return NextResponse.json({error:response.status===429?'모든 AI 모델의 사용량 제한에 도달했습니다. 잠시 후 다시 시도해 주세요.':'코드 리뷰 생성에 실패했습니다.'},{status:response.status===429?429:502});
-    }
-    const payload=await response.json() as Record<string,unknown>;
-    try { parsed=parseReviewText(outputText(payload)); usedModel=groqModel!; }
-    catch { return NextResponse.json({error:'AI 응답을 읽지 못했습니다.'},{status:502}); }
+  if (!review) {
+    const retryable=failures.some((failure)=>failure.retryable);
+    const rateLimited=failures.some((failure)=>failure.status===429);
+    // The next request starts at Ollama again, so respect every provider's cooldown.
+    const retryAfter=retryable?Math.max(1,Math.ceil((Math.max(...failures.filter((failure)=>failure.retryable).map((failure)=>failure.retryAt))-Date.now())/1000)):0;
+    return NextResponse.json({
+      error:!retryable?'AI 모델 설정 또는 요청을 확인해야 합니다.':rateLimited?'AI 사용량 제한으로 리뷰를 잠시 기다려야 합니다.':'AI 서버의 일시적인 오류로 리뷰를 완료하지 못했습니다.',
+      code:!retryable?'AI_PROVIDER_ERROR':rateLimited?'AI_RATE_LIMIT':'AI_TEMPORARY_ERROR',
+      retryable,retryAfterSeconds:retryAfter,
+    },{status:rateLimited?429:502,headers:{'Cache-Control':'no-store',...(retryable?{'Retry-After':String(retryAfter)}:{})}});
   }
-
-  if (parsed===undefined) return NextResponse.json({error:lastStatus===429?'AI 사용량 제한에 도달했습니다. 잠시 후 다시 시도해 주세요.':'코드 리뷰 생성에 실패했습니다.'},{status:lastStatus===429?429:502});
-  const normalizedReview=normalizeReview(parsed);
-  const review=normalizedReview ? alignReviewLines(normalizedReview,code) : null;
-  if (!review) return NextResponse.json({error:'AI 리뷰 내용을 생성하지 못했습니다. 다시 시도해 주세요.'},{status:502});
   if (review.verdict === '최우선 수정 1문장' && review.issues[0]) review.verdict = `${review.issues[0].title}: ${review.issues[0].suggestion}`;
   if (review.betterApproach.title === '접근 이름') review.betterApproach.title = '핵심 개선 순서';
   if (review.betterApproach.steps.some((step)=>/^단계\d+$/.test(step))) {

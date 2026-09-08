@@ -10,6 +10,7 @@
     "build": "next build",
     "build:vinext": "vinext build",
     "start": "vinext start",
+    "test": "node --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
   "dependencies": {
