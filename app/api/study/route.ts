@@ -163,7 +163,8 @@ async function readSolutionContent(blockId:string,token:string):Promise<{code:st
       }
     } else if ((section==='strategy' || section==='retrospective') && text) {
       const prefix=block.type==='bulleted_list_item'?'- ':block.type==='numbered_list_item'?'1. ':'';
-      result[section]+=`${result[section]?'\n':''}${prefix}${text}`;
+      const content=prefix?text.replace(/\r\n/g,'\n').replace(/\n/g,`\n${' '.repeat(prefix.length)}`):text;
+      result[section]+=`${result[section]?'\n':''}${prefix}${content}`;
     }
   }
   return result;

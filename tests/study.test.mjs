@@ -20,7 +20,7 @@ const solutionPage = (id, name) => ({
   properties: { '이름': { type: 'title', title: [{ plain_text: name }] } },
 });
 
-function mockNotion(t, { missing = false, empty = false, week = 8 } = {}) {
+function mockNotion(t, { missing = false, empty = false, week = 8, strategyBlocks } = {}) {
   const weekProblem = { ...problem, properties: { ...problem.properties, '주차': { multi_select: [{ name: `WEEK${week}` }] } } };
   const originalToken = process.env.NOTION_TOKEN;
   process.env.NOTION_TOKEN = 'test-token';
@@ -50,7 +50,7 @@ function mockNotion(t, { missing = false, empty = false, week = 8 } = {}) {
       return Response.json({ results: empty ? [] : [
         heading('풀이'), code(`class ${author}Solution {}`),
         heading('시도한 풀이'), code(`class ${author}Attempt {}`),
-        heading('전략'), code(`${author} 전략`),
+        heading('전략'), ...(strategyBlocks ?? [code(`${author} 전략`)]),
         heading('후기'), code(`${author} 후기`),
       ] });
     }
@@ -128,4 +128,11 @@ test('continues to include new members after their joining week', async (t) => {
   const body = await response.json();
   assert.deepEqual(body.progress.map((item) => item.member.name), ['이종혁', '강예정', '민택기', '주민경', '정주연', '박지우']);
   assert.ok(body.progress.every((item) => item.total === 1));
+});
+
+test('preserves multiline Notion numbered items when serializing strategy', async (t) => {
+  const numbered = (text) => ({type:'numbered_list_item',numbered_list_item:{rich_text:[{plain_text:text}]}});
+  mockNotion(t, {strategyBlocks:[numbered('첫 항목\n줄바꿈 설명'),numbered('두 번째 항목')]});
+  const detail = await readDetail();
+  assert.equal(detail.solutions.find((item)=>item.member.name==='정주연').strategy, '1. 첫 항목\n   줄바꿈 설명\n1. 두 번째 항목');
 });

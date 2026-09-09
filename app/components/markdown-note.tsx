@@ -18,24 +18,28 @@ export default function MarkdownNote({content,empty}:{content:string;empty:strin
   for (let index=0;index<lines.length;) {
     const line=lines[index].trim();
     if (!line) { index++; continue; }
-    if (/^[-*]\s+/.test(line)) {
+    const ordered=/^\d+[.)]\s+/.test(line);
+    if (ordered || /^[-*]\s+/.test(line)) {
+      const pattern=ordered?/^\d+[.)]\s+(.+)$/:/^[-*]\s+(.+)$/;
+      const start=ordered?Number(line.match(/^\d+/)![0]):1;
       const items:string[]=[];
       while(index<lines.length) {
-        const item=lines[index].trim().match(/^[-*]\s+(.+)$/);
+        const item=lines[index].trim().match(pattern);
         if (!item) break;
-        items.push(item[1]); index++;
+        const itemLines=[item[1]];
+        index++;
+        while (index<lines.length) {
+          const next=lines[index].trim();
+          if (/^(?:[-*]|\d+[.)])\s+/.test(next) || /^#{1,3}\s+/.test(next)) break;
+          // A plain blank line ends a list; indented blanks belong to the item.
+          if (!next && !/^[ \t]+$/.test(lines[index])) break;
+          itemLines.push(next);
+          index++;
+        }
+        items.push(itemLines.join('\n'));
       }
-      blocks.push(<ul key={`ul-${index}`}>{items.map((item,itemIndex)=><li key={itemIndex}>{inline(item)}</li>)}</ul>);
-      continue;
-    }
-    if (/^\d+[.)]\s+/.test(line)) {
-      const items:string[]=[];
-      while(index<lines.length) {
-        const item=lines[index].trim().match(/^\d+[.)]\s+(.+)$/);
-        if (!item) break;
-        items.push(item[1]); index++;
-      }
-      blocks.push(<ol key={`ol-${index}`}>{items.map((item,itemIndex)=><li key={itemIndex}>{inline(item)}</li>)}</ol>);
+      const children=items.map((item,itemIndex)=><li key={itemIndex}>{inline(item)}</li>);
+      blocks.push(ordered?<ol start={start} key={`ol-${index}`}>{children}</ol>:<ul key={`ul-${index}`}>{children}</ul>);
       continue;
     }
     const heading=line.match(/^(#{1,3})\s+(.+)$/);
