@@ -1,5 +1,6 @@
 import type { Review, ReviewRequest } from './review';
 import { isRetryableStatus, retryAfterSeconds } from './review-retry';
+import { normalizeReviewScore } from './review-score';
 
 export type ReviewRetryState = {attempt:number;retryAt:number};
 export class ReviewRequestError extends Error {
@@ -37,7 +38,8 @@ async function fetchReview(input:ReviewRequest,signal?:AbortSignal):Promise<Revi
       const parsed:unknown=JSON.parse(text);
       if (parsed && typeof parsed==='object') body=parsed;
     } catch { /* Gateway errors can contain HTML instead of JSON. */ }
-    if (response.ok && body.review && typeof body.review.verdict==='string' && typeof body.review.currentApproach==='string' && Array.isArray(body.review.issues)) return body.review;
+    const score=normalizeReviewScore(body.review?.score);
+    if (response.ok && body.review && score && typeof body.review.verdict==='string' && typeof body.review.currentApproach==='string' && Array.isArray(body.review.issues)) return {...body.review,score};
     const delay=Math.max(
       retryAfterSeconds(response.headers.get('Retry-After')) ?? 0,
       typeof body.retryAfterSeconds==='number'&&Number.isFinite(body.retryAfterSeconds)?Math.max(0,body.retryAfterSeconds):0,

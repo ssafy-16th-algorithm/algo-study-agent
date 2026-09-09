@@ -1,8 +1,8 @@
 import './register-typescript.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { review } from './fixtures/review.mjs';
 const { POST } = await import('../app/api/review/route.ts');
-const review = { verdict: '✅ 정상', currentApproach: '순회', issues: [] };
 let client = 0;
 function setup(t, respond, { groq = true } = {}) {
   for (const [name, value] of Object.entries({ OLLAMA_API_KEY: 'test', OLLAMA_REVIEW_MODEL: 'test-ollama', LLM_API_KEY: groq ? 'test' : '', LLM_REVIEW_MODEL: groq ? 'test-groq' : '' })) {
@@ -135,4 +135,47 @@ test('provider timeout includes reading the response body', async (t) => {
   const response = await pending;
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('X-Review-Provider'), 'groq');
+});
+
+test('calculates total and grade from category points rather than trusting the model total', async (t) => {
+  const scored = structuredClone(review);
+  scored.score.total = 100;
+  scored.score.grade = 'S';
+  setup(t, async () => Response.json({ message: { content: JSON.stringify(scored) } }));
+  const response = await POST(request());
+  assert.equal(response.status, 200);
+  const actual = (await response.json()).review.score;
+  assert.equal(actual?.total, 85);
+  assert.equal(actual.grade, 'A');
+  assert.deepEqual(actual.criteria, review.score.criteria);
+});
+
+for (const invalid of [undefined, null, '40', 41, -1, 1.5]) {
+  test(`rejects invalid correctness points (${String(invalid)}) and uses the fallback`, async (t) => {
+    const invalidReview = structuredClone(review);
+    invalidReview.score.criteria.correctness.points = invalid;
+    setup(t, async (url) => String(url).includes('ollama.com')
+      ? Response.json({ message: { content: JSON.stringify(invalidReview) } })
+      : Response.json({ choices: [{ message: { content: JSON.stringify(review) } }] }));
+    const response = await POST(request());
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('X-Review-Provider'), 'groq');
+    assert.equal((await response.json()).review.score.total, 85);
+  });
+}
+
+test('does not invent a score when the model omits it', async (t) => {
+  const withoutScore = { ...review };
+  delete withoutScore.score;
+  setup(t, async () => Response.json({ message: { content: JSON.stringify(withoutScore) } }), { groq: false });
+  const response = await POST(request());
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).retryable, true);
+});
+
+test('requires an explanation for every score category', async (t) => {
+  const invalidReview = structuredClone(review);
+  invalidReview.score.criteria.efficiency.reason = ' ';
+  setup(t, async () => Response.json({ message: { content: JSON.stringify(invalidReview) } }), { groq: false });
+  assert.equal((await POST(request())).status, 502);
 });

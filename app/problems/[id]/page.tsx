@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import CodeViewer from '../../components/code-viewer';
 import MarkdownNote from '../../components/markdown-note';
+import ReviewScoreCard from '../../components/review-score-card';
 import SiteHeader from '../../components/site-header';
 import { useCodeReview } from '../../hooks/use-code-review';
 import type { ProblemDetail } from '../../lib/study';
@@ -74,7 +75,7 @@ export default function ProblemPage() {
 
         <section className="aiReview">
           <div className="reviewHeading"><div><span className="aiMark">AI</span><span><strong>코드 리뷰</strong><small>불필요한 코드 · 구현 개선 · 더 나은 알고리즘</small></span></div></div>
-          {review?<div className="reviewBody"><div className="reviewSummary"><span>한 줄 평가</span><h2>{review.verdict}</h2><p><strong>복잡도</strong> {review.complexity}</p></div>
+          {review?<div className="reviewBody"><ReviewScoreCard score={review.score}/><div className="reviewSummary"><span>한 줄 평가</span><h2>{review.verdict}</h2><p><strong>복잡도</strong> {review.complexity}</p></div>
             <div className="reviewContext"><article><span>현재 풀이 방식</span><p>{review.currentApproach}</p></article>{review.strengths?.length?<article><span>잘한 점</span><ul>{review.strengths.map((strength)=><li key={strength}>{strength}</li>)}</ul></article>:null}</div>
             {review.issues.length?<div className="issueList">{review.issues.map((issue,index)=><article className="issueCard" key={issue.line+'-'+index}><div className="issueMeta"><span className="issueLabels"><em className={`severity severity${issue.severity==='반드시 수정'?'Must':issue.severity==='선택 사항'?'Optional':'Improve'}`}>{issue.severity}</em><span className={`issueKind kind${index%4}`}>{issue.kind}</span></span><small>LINE {issue.line}</small></div><h3>{issue.title}</h3>{issue.codeQuote?<p className="issueCodeQuote"><strong>코드</strong><code>{issue.codeQuote}</code></p>:null}<p><strong>근거</strong>{issue.evidence}</p><p><strong>영향</strong>{issue.impact}</p><p className="suggestion"><strong>수정</strong>{issue.suggestion}</p>{issue.codeExample?<div className="reviewCode"><div className="reviewCodeHeader"><span>JAVA</span><strong>수정 예시</strong></div><pre tabIndex={0}><code>{issue.codeExample}</code></pre></div>:null}</article>)}</div>:<div className="reviewNoIssues"><strong>현재 풀이에서 반드시 고쳐야 할 문제는 찾지 못했습니다.</strong><p>정답성과 성능이 충분하다면 다른 알고리즘으로 억지로 바꿀 필요가 없습니다.</p></div>}
             <article className="approachCard"><span>개선 방향</span><h3>{review.betterApproach.title}</h3><ol>{review.betterApproach.steps.map((step)=><li key={step}>{step}</li>)}</ol><p>{review.betterApproach.complexity}</p></article><div className="testCase"><strong>반례와 검증</strong><p>{review.testCase}</p></div>{review.learningPoints?.length?<article className="learningCard"><span>핵심 학습 포인트</span><ol>{review.learningPoints.map((point)=><li key={point}>{point}</li>)}</ol></article>:null}

@@ -4,11 +4,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Review } from '../lib/review';
 import type { StudyProblem, StudySolution } from '../lib/study';
 import { requestReviewWithRetry, ReviewRequestError, type ReviewRetryState } from '../lib/review-client';
+import { normalizeReviewScore, REVIEW_VERSION } from '../lib/review-score';
 
 type ReviewStatus='idle'|'loading'|'ready'|'error';
 const memoryCache=new Map<string,Review>();
 const cooldowns=new Map<string,number>();
-const STORAGE_PREFIX='algorithm-review:v13:';
+const STORAGE_PREFIX=`algorithm-review:v${REVIEW_VERSION}:`;
 
 function shortHash(value:string) {
   let hash=2166136261;
@@ -19,7 +20,9 @@ function shortHash(value:string) {
 function readStored(key:string) {
   try {
     const value=window.localStorage.getItem(STORAGE_PREFIX+key);
-    return value?JSON.parse(value) as Review:null;
+    const review=value?JSON.parse(value) as Review:null;
+    const score=normalizeReviewScore(review?.score);
+    return review && score?{...review,score}:null;
   } catch { return null; }
 }
 

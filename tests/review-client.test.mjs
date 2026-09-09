@@ -1,9 +1,9 @@
 import './register-typescript.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { review } from './fixtures/review.mjs';
 const { requestReviewWithRetry } = await import('../app/lib/review-client.ts');
 const input = { problem: { title: '나무높이' }, code: 'class Main {}' };
-const review = { verdict: '✅ 정상', currentApproach: '순회', issues: [] };
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 function setup(t, responses) {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: new Date('2026-09-08T00:00:00Z') });
@@ -133,6 +133,17 @@ test('aborts an in-flight request without retrying', async (t) => {
 });
 test('recovers from an invalid successful response instead of displaying it', async (t) => {
   const calls = setup(t, [Response.json({ review: {} }), Response.json({ review })]);
+  const pending = requestReviewWithRetry(input);
+  await flush();
+  t.mock.timers.tick(2000);
+  assert.deepEqual(await pending, review);
+  assert.equal(calls(), 2);
+});
+
+test('retries an old review response without scores', async (t) => {
+  const withoutScore = { ...review };
+  delete withoutScore.score;
+  const calls = setup(t, [Response.json({ review: withoutScore }), Response.json({ review })]);
   const pending = requestReviewWithRetry(input);
   await flush();
   t.mock.timers.tick(2000);

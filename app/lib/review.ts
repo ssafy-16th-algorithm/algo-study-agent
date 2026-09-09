@@ -14,6 +14,7 @@ export type ReviewIssue = {
 };
 
 export type Review = {
+  score:ReviewScore;
   verdict:string;
   currentApproach:string;
   strengths:string[];
@@ -32,3 +33,4 @@ export type ReviewRequest = {
   code?:string;
   refresh?:boolean;
 };
+import type { ReviewScore } from './review-score';
